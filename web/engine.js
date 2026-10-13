@@ -195,7 +195,7 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
     f.wsfuC = wc * 10 + lav * 1.5 + fx.ss * 2.25 + fx.df * 0.25 + kitchens * 12;
     f.wsfuH = lav * 1.5 + fx.ss * 2.25 + kitchens * 8;
     f.wsfuT = wc * 10 + lav * 2 + fx.ss * 3 + fx.df * 0.25 + kitchens * 20;   // total (combined) column, NYC PC Appendix E: lav 2, service sink 3
-    f.dfu = wc * 4 + lav * 1 + fx.ss * 3 + fx.df * 0.5 + (wc > 0 ? 2 : 0) + kitchens * 12;
+    f.dfu = wc * 4 + lav * 1 + fx.ss * 2 + fx.df * 0.5 + (wc > 0 ? 2 : 0) + kitchens * 12;
     f.exhaust = wc * 70;
     f.restroomM2 = hasRR ? r1(bArea(rr)) : (wc && !rr ? r1((wc * 3.6 + lav * 1.6) * 1.35 + 4) : 0);
     f.heads = 0;
