@@ -310,7 +310,7 @@ function select(el) {
 
 // ---------- UI: assumptions ----------
 const AFIELDS = [
-  ['General', [['structDepth', 'Slab+structure depth (m)', 0.05], ['minClear', 'Target clear height (m)', 0.1]]],
+  ['General', [['structDepth', 'Slab+structure depth (m)', 0.05], ['minClear', 'Target clear height (m)', 0.1], ['auditoriumSeats', 'Auditorium fixed seats (0 = 7 net)', 1]]],
   ['HVAC', [['supplyDT', 'Supply ΔT (°F)', 1], ['envLoad', 'Envelope load (Btuh/ft²)', 1], ['heatLoad', 'Heating load (Btuh/ft²)', 1], ['Ez', 'Ez (distribution eff.)', 0.05], ['vMain', 'Main velocity (fpm)', 50], ['vBranch', 'Branch velocity (fpm)', 50], ['vRiser', 'Riser velocity (fpm)', 50], ['maxDuctDepth', 'Max duct depth (in)', 2], ['kWperTon', 'Chiller kW/ton', 0.05], ['diffuserCfm', 'cfm / diffuser', 25], ['gridSpacing', 'Open-plan run-out spacing (m)', 0.5]]],
   ['Immersive halls / offices', [['projImgW', 'Projector image width (m)', 0.5], ['projImgH', 'Projector image height (m)', 0.25], ['projOverlap', 'Edge-blend overlap', 0.05], ['projKW', 'kW per projector', 0.1], ['avRackKW', 'AV rack kW per hall', 1], ['deskM2', 'm² per desk', 0.5], ['deskW', 'W per desk', 10]]],
   ['Plumbing', [['streetPsi', 'Street pressure (psi)', 1], ['rainfall', 'Rainfall (in/hr)', 0.01]]],
@@ -440,7 +440,7 @@ const DESC = {
   'Emergency/standby generator': 'Backup power for life-safety and legally required loads (high-rise requirement). Diesel with day tank assumed.',
   'Sprinkler main': 'Fire-protection pipe from the floor control valve (in the stair) feeding the sprinkler branch lines.',
   'Sprinkler branch': 'Smaller pipes carrying water to the individual sprinkler heads.',
-  'Sprinkler head': 'Heat-activated nozzles that open automatically in a fire. Spacing depends on hazard class (15 ft light, 12 ft ordinary).',
+  'Sprinkler head': 'Heat-activated nozzles that open automatically in a fire. Spacing depends on hazard class (15 ft light, 11 ft ordinary — max 130 ft² per head).',
   'Standpipe': 'Vertical fire pipe in each stair with hose valves at every landing, used by the fire department; also feeds the floor sprinklers (combined system).',
   'Fire service': 'Dedicated water main from the street to the fire pump and standpipes, with a Siamese connection for fire-department pumpers.',
   'Fire pump': 'Boosts water pressure for the standpipes and sprinklers so the top hose outlet gets ~100 psi. In a 2-hr rated room (NFPA 20).',
@@ -568,7 +568,7 @@ $('#b3dm').onclick = export3dm;
 $('#bObj').onclick = exportOBJ;
 $('#bCsv').onclick = () => {
   const H = ['floor', 'elev_m', 'gross_m2', 'occupants', 'supply_cfm', 'oa_cfm', 'cooling_tons', 'heating_mbh', 'main_duct', 'clear_height_m', 'wc_men', 'wc_women', 'lav', 'df', 'wsfu_total', 'dfu', 'lighting_kW', 'plug_media_kW', 'floor_kVA', 'sprinkler_heads', 'booster_zone'];
-  const rows = model.floors.map(f => [f.name, f.z, f.grossM2, f.occ, f.cfm, f.oa, f.tons.toFixed(1), f.mbh.toFixed(0), f.mainDuct || '', f.ceiling ?? '', f.fix.wcM, f.fix.wcF, f.fix.lavM + f.fix.lavF, f.fix.df, (f.wsfuC + f.wsfuH).toFixed(1), f.dfu.toFixed(1), f.light.toFixed(1), f.plug.toFixed(1), (f.kva || 0).toFixed(1), f.heads, f.boosted ? 'yes' : 'no']);
+  const rows = model.floors.map(f => [f.name, f.z, f.grossM2, f.occ, f.cfm, f.oa, f.tons.toFixed(1), f.mbh.toFixed(0), f.mainDuct || '', f.ceiling ?? '', f.fix.wcM, f.fix.wcF, f.fix.lavM + f.fix.lavF, f.fix.df, f.wsfuT.toFixed(1), f.dfu.toFixed(1), f.light.toFixed(1), f.plug.toFixed(1), (f.kva || 0).toFixed(1), f.heads, f.boosted ? 'yes' : 'no']);
   download(`2GBX_MEP_schedule_${stamp()}.csv`, [H, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n'), 'text/csv');
 };
 $('#bJson').onclick = () => {

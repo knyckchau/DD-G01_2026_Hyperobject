@@ -3,26 +3,28 @@
 export const FT = 3.28084, M2FT2 = 10.7639, IN = 0.0254;
 
 // ---------- Category assumptions (editable in UI) ----------
-// olf = occupant load factor ft²/person (NYC BC Table 1004.5 basis, verify), Rp/Ra = ASHRAE 62.1 / NYC MC 403 rates,
+// olf = occupant load factor ft²/person (NYC BC 2022 Table 1004.1.3), olfGrade = factor on the grade floor where the table differs,
+// Rp/Ra = ASHRAE 62.1 / NYC MC 403 rates,
 // lpd/epd = lighting / plug+media W/ft², haz = NFPA 13 hazard, grp = occupancy group for fixture counts.
 export const CATS = {
   gallery:    { label: 'Exhibition gallery (open plan)', olf: 30, Rp: 7.5, Ra: 0.06, lpd: 1.0, epd: 1.5,   haz: 'LH',  grp: 'A-3', color: '#74a9f7' },
-  immersive:  { label: 'Immersive hall (360° projection)', olf: 15, Rp: 7.5, Ra: 0.06, lpd: 0.3, epd: 1,  haz: 'LH',  grp: 'A-3', color: '#a78bfa' },
+  immersive:  { label: 'Immersive hall (360° projection)', olf: 30, Rp: 7.5, Ra: 0.06, lpd: 0.3, epd: 1,  haz: 'LH',  grp: 'A-3', color: '#a78bfa' },
   auditorium: { label: 'Auditorium',              olf: 7,   Rp: 5,   Ra: 0.06, lpd: 0.8, epd: 4,   haz: 'LH',  grp: 'A-1', color: '#f78f8f' },
   food:       { label: 'Food court / events',     olf: 15,  Rp: 7.5, Ra: 0.18, lpd: 0.8, epd: 8,   haz: 'OH1', grp: 'A-2', color: '#f5c542' },
   lobby:      { label: 'Lobby / cafe / cloak',    olf: 15,  Rp: 5,   Ra: 0.06, lpd: 0.8, epd: 1.5, haz: 'LH',  grp: 'A-3', color: '#69db7c' },
-  shop:       { label: 'Shop / library',          olf: 60,  Rp: 7.5, Ra: 0.12, lpd: 1.1, epd: 2,   haz: 'OH2', grp: 'M',   color: '#ffa94d' },
+  shop:       { label: 'Shop / library',          olf: 60,  olfGrade: 30, Rp: 7.5, Ra: 0.12, lpd: 1.1, epd: 2,   haz: 'OH2', grp: 'M',   color: '#ffa94d' },
   office:     { label: 'Offices (desks + PCs)',   olf: 100, Rp: 5,   Ra: 0.06, lpd: 0.64, epd: 0.25, haz: 'LH',  grp: 'B',   color: '#3bc9db' },
   technical:  { label: 'Roof technical space',    olf: 300, Rp: 0,   Ra: 0.06, lpd: 0.5, epd: 1,   haz: 'OH1', grp: '-',   color: '#adb5bd' },
   restroom:   { label: 'Restrooms',               olf: 0,   Rp: 0,   Ra: 0.06, lpd: 0.6, epd: 0.2, haz: 'LH',  grp: '-',   color: '#b197fc' },
   support:    { label: 'Circulation / support',   olf: 0,   Rp: 0,   Ra: 0.06, lpd: 0.5, epd: 0.5, haz: 'LH',  grp: '-',   color: '#ced4da' },
-  terrace:    { label: 'Terrace (exterior)',      olf: 15,  Rp: 0,   Ra: 0,    lpd: 0.2, epd: 0.2, haz: '-',   grp: 'A-5', color: '#96f2d7', exterior: true },
+  terrace:    { label: 'Terrace (exterior)',      olf: 15,  Rp: 0,   Ra: 0,    lpd: 0.2, epd: 0.2, haz: '-',   grp: 'A-3', color: '#96f2d7', exterior: true },
 };
 
 export const DEFAULTS = {
   // general / coordination
   structDepth: 0.75,     // m, slab + beam zone below the slab above
   minClear: 3.6,         // m, target finished clear height in public floors
+  auditoriumSeats: 182,  // fixed seats (P3 drawing) → occupant load = seat count, NYC BC §1004.3; 0 = chairs only at 7 net
   // HVAC
   concept: 'floorAHU',   // 'floorAHU' (DOAS on roof + floor-by-floor AHUs) | 'central' (central roof AHUs + supply/return shafts)
   supplyDT: 20,          // °F room - supply
@@ -47,14 +49,14 @@ export const DEFAULTS = {
   deskM2: 10, deskW: 150, // m² per workstation, W per desk (PC + 2 monitors)
   autoShaft: true,       // enlarge shafts automatically when risers do not fit
   // plumbing
-  streetPsi: 45, flushValvePsi: 25, frictionPsi: 15, meterBfpPsi: 12, maxFixturePsi: 80,
-  rainfall: 2.87,        // in/hr (workbook 100-yr 1-hr) — verify NYC PC §1106 design rate
+  streetPsi: 45, flushValvePsi: 25, frictionPsi: 15, meterBfpPsi: 12, maxFixturePsi: 85,
+  rainfall: 3,           // in/hr, NYC PC §1106.1 (100-yr hourly rate fixed at 3 in/hr)
   // electrical
   voltage: 480, demand: 0.8, spare: 0.25, pf: 0.9,
   elevators: 0, elevatorHp: 40, freightHp: 60, // 0 = use count from the core model
   // fire
   genLocation: 'roof', // 'roof' | 'basement'
-  standpipeFlow: 0, topOutletPsi: 100, // 0 = auto (NFPA 14: 500 gpm + 250 per extra standpipe, max 1000)
+  standpipeFlow: 0, topOutletPsi: 65, // 0 = auto (NFPA 14 §7.10: 500 gpm + 250 per extra standpipe, max 1000); 65 psi per NYC BC Appendix Q mod. to NFPA 14 §7.8.1
 };
 
 const NOM = [[0.75, .824], [1, 1.049], [1.25, 1.38], [1.5, 1.61], [2, 2.067], [2.5, 2.469], [3, 3.068], [4, 4.026], [5, 5.047], [6, 6.065], [8, 7.981], [10, 10.02], [12, 11.938], [14, 13.124], [16, 15.0], [18, 16.876], [20, 18.812]];
@@ -76,23 +78,30 @@ export function pipeFor(gpm, vmax = v => v) {
 const hydV = n => (n <= 2 ? 4 : n <= 6 ? 8 : 10);   // hydronic velocity limits fps
 const domV = () => 6;                                // domestic water fps
 // Hunter curve, flush-valve predominant (IPC/NYC PC Appendix E Table E103.3(3) approx.)
-const HUNTER = [[0, 0], [10, 27], [20, 35], [30, 41], [40, 46], [50, 51], [60, 55], [80, 62], [100, 68], [150, 80], [200, 91], [250, 101], [300, 110], [400, 126], [500, 142], [750, 177], [1000, 208], [1500, 260], [2000, 305], [3000, 380]];
-export function wsfuToGpm(w) { for (let i = 1; i < HUNTER.length; i++) { const [a, ga] = HUNTER[i - 1], [b, gb] = HUNTER[i]; if (w <= b) return ga + (gb - ga) * (w - a) / (b - a); } return 380 + (w - 3000) * 0.07; }
-const stackSize = dfu => dfu <= 48 ? 3 : dfu <= 500 ? 4 : dfu <= 1100 ? 5 : dfu <= 1900 ? 6 : dfu <= 3600 ? 8 : 10;      // NYC PC Table 710.1(1) stacks
-const branchSize = dfu => dfu <= 20 ? 3 : dfu <= 160 ? 4 : dfu <= 360 ? 5 : dfu <= 620 ? 6 : 8;                           // horizontal branches (WC min 3")
-const leaderSize = gpm => [[2, 30], [3, 92], [4, 192], [5, 360], [6, 563], [8, 1208], [10, 2200]].find(x => gpm <= x[1])?.[0] ?? 12; // NYC PC 1106.2 vertical leaders
+const HUNTER = [[0, 0], [10, 27], [20, 35], [30, 41], [40, 46], [50, 51], [60, 55], [80, 62], [100, 68], [150, 80], [200, 91], [250, 101], [300, 110], [400, 126], [500, 142], [750, 177], [1000, 208], [1500, 269], [2000, 325], [2500, 380], [3000, 433]];
+export function wsfuToGpm(w) { for (let i = 1; i < HUNTER.length; i++) { const [a, ga] = HUNTER[i - 1], [b, gb] = HUNTER[i]; if (w <= b) return ga + (gb - ga) * (w - a) / (b - a); } return 433 + (w - 3000) * 0.106; }
+const stackSize = dfu => dfu <= 48 ? 3 : dfu <= 500 ? 4 : dfu <= 1100 ? 5 : dfu <= 1900 ? 6 : dfu <= 3600 ? 8 : 10;      // NYC PC Table 710.1(2) stacks (> 3 branch intervals; 3 in kept at 48, conservative)
+const drainSize = dfu => dfu <= 180 ? 4 : dfu <= 390 ? 5 : dfu <= 700 ? 6 : dfu <= 1600 ? 8 : dfu <= 2900 ? 10 : dfu <= 4600 ? 12 : 15; // building drain at 1/8 in/ft, NYC PC Table 710.1(1)
+const branchSize = dfu => dfu <= 20 ? 3 : dfu <= 160 ? 4 : dfu <= 360 ? 5 : dfu <= 620 ? 6 : 8;                           // horizontal branches, NYC PC Table 710.1(2) (WC min 3")
+const leaderSize = gpm => [[2, 30], [3, 92], [4, 192], [5, 360], [6, 563], [8, 1208], [10, 2050]].find(x => gpm <= x[1])?.[0] ?? 12; // NYC PC Table 1106.3 vertical leaders (10 in from Table 1106.2 vertical drain)
 const STD_A = [400, 600, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000];
 const stdA = a => STD_A.find(x => x >= a) ?? Math.ceil(a / 1000) * 1000;
 const GEN = [150, 200, 300, 400, 500, 600, 750, 800, 1000, 1250, 1500, 2000, 2500];
 
-// ---------- fixture counts (NYC PC Table 403.1 basis — verify) ----------
+// ---------- fixture counts (NYC PC 2022 Table 403.1, §403.1.1 50/50 split, fractions rounded up) ----------
+// A-1 / A-3: WC 1 per 70 (male) / 1 per 35 (female) for the first 210 of each sex, then 1 per 125 / 1 per 65; lav 1 per 200; DF 1 per 500.
+// B: stepped NYC counts per sex — WC 1–20:1, 21–45:2, 46–70:3, 71–100:4, 101–140:5, 141–190:6, +1 per 50;
+//    lav 1–25:1, 26–50:2, 51–75:3, 76–115:4, 116–160:5, +1 per 60; DF 1 per 100. (verify column assignment against the printed table)
+const tier = (n, first, r1, r2) => n <= first ? n / r1 : first / r1 + (n - first) / r2;
+const steps = (n, tbl, extra) => { if (n <= 0) return 0; for (const [lim, k] of tbl) if (n <= lim) return k; const [lim, k] = tbl[tbl.length - 1]; return k + Math.ceil((n - lim) / extra); };
+const B_WC = [[20, 1], [45, 2], [70, 3], [100, 4], [140, 5], [190, 6]], B_LAV = [[25, 1], [50, 2], [75, 3], [115, 4], [160, 5]];
 function fixtureDemand(occByGrp) {
   let wcM = 0, wcF = 0, lavM = 0, lavF = 0, df = 0;
   for (const [g, occ] of Object.entries(occByGrp)) {
     const m = occ / 2, f = occ / 2;
-    if (g === 'A-1' || g === 'A-3') { wcM += m / 125; wcF += f / 65; lavM += m / 200; lavF += f / 200; df += occ / 1000; }
+    if (g === 'A-1' || g === 'A-3') { wcM += tier(m, 210, 70, 125); wcF += tier(f, 210, 35, 65); lavM += m / 200; lavF += f / 200; df += occ / 500; }
     else if (g === 'A-2') { wcM += m / 75; wcF += f / 75; lavM += m / 200; lavF += f / 200; df += occ / 500; }
-    else if (g === 'B') { const w = n => n <= 50 ? n / 25 : 2 + (n - 50) / 50, l = n => n <= 80 ? n / 40 : 2 + (n - 80) / 80; wcM += w(m); wcF += w(f); lavM += l(m); lavF += l(f); df += occ / 100; }
+    else if (g === 'B') { const n = Math.ceil(m - 1e-9); wcM += steps(n, B_WC, 50); wcF += steps(n, B_WC, 50); lavM += steps(n, B_LAV, 60); lavF += steps(n, B_LAV, 60); df += occ / 100; }
     else if (g === 'M') { wcM += m / 500; wcF += f / 500; lavM += m / 750; lavF += f / 750; df += occ / 1000; }
   }
   const any = Object.values(occByGrp).some(v => v > 0);
@@ -131,6 +140,7 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
   const slabC = l => { let a = 0, x = 0, y = 0; for (const t of l.tris) { const ar = Math.abs((t[2] - t[0]) * (t[5] - t[1]) - (t[4] - t[0]) * (t[3] - t[1])) / 2; a += ar; x += ar * (t[0] + t[2] + t[4]) / 3; y += ar * (t[1] + t[3] + t[5]) / 3; } if (!a) return [cx, cy]; let px = x / a, py = y / a; if (!insideTris(l.tris, px, py)) { let best = null; for (const t of l.tris) { const tx = (t[0] + t[2] + t[4]) / 3, ty = (t[1] + t[3] + t[5]) / 3, d = (tx - px) ** 2 + (ty - py) ** 2, ar = Math.abs((t[2] - t[0]) * (t[5] - t[1]) - (t[4] - t[0]) * (t[3] - t[1])) / 2; if (ar > 4 && (!best || d < best[0])) best = [d, tx, ty]; } if (best) { px = best[1]; py = best[2]; } } return [px, py]; };
 
   // ---- 1. zones & loads per floor ----
+  const audArea = P.volumes.filter(v => v.cat === 'auditorium').reduce((s, v) => s + v.area, 0) || 1;
   for (let i = 0; i < L.length; i++) {
     const lv = L[i], zNext = i < L.length - 1 ? L[i + 1].z : Math.max(...P.volumes.filter(v => v.floor === i).map(v => v.zmax), lv.z + 6);
     const vols = P.volumes.filter(v => v.floor === i);
@@ -145,7 +155,8 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
     let T = { occ: 0, oa: 0, cfm: 0, tons: 0, mbh: 0, light: 0, plug: 0, aftCond: 0 };
     for (const zn of zones) {
       const c = cats[zn.cat], aft = zn.area * M2FT2;
-      zn.occ = c.olf ? Math.ceil(aft / c.olf) : 0;
+      const olf = (i === 0 && c.olfGrade) ? c.olfGrade : c.olf;
+      zn.occ = zn.cat === 'auditorium' && A.auditoriumSeats > 0 ? Math.ceil(A.auditoriumSeats * zn.area / audArea) : olf ? Math.ceil(aft / olf) : 0;
       if (c.grp && c.grp !== '-') f.occByGrp[c.grp] = (f.occByGrp[c.grp] || 0) + zn.occ;
       zn.light = c.lpd * aft / 1000; zn.plug = c.epd * aft / 1000; // kW
       if (zn.cat === 'immersive' && zn.bbox) {
@@ -183,6 +194,7 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
     const kitchens = zones.filter(z => z.cat === 'food').length;
     f.wsfuC = wc * 10 + lav * 1.5 + fx.ss * 2.25 + fx.df * 0.25 + kitchens * 12;
     f.wsfuH = lav * 1.5 + fx.ss * 2.25 + kitchens * 8;
+    f.wsfuT = wc * 10 + lav * 2 + fx.ss * 3 + fx.df * 0.25 + kitchens * 20;   // total (combined) column, NYC PC Appendix E: lav 2, service sink 3
     f.dfu = wc * 4 + lav * 1 + fx.ss * 3 + fx.df * 0.5 + (wc > 0 ? 2 : 0) + kitchens * 12;
     f.exhaust = wc * 70;
     f.restroomM2 = hasRR ? r1(bArea(rr)) : (wc && !rr ? r1((wc * 3.6 + lav * 1.6) * 1.35 + 4) : 0);
@@ -211,13 +223,13 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
        { k: 'CHWS', sub: 'Chilled water', p: pipeFor(chwG(totTons), hydV) }, { k: 'CHWR', sub: 'Chilled water', p: pipeFor(chwG(totTons), hydV) },
        { k: 'HHWS', sub: 'Heating hot water', p: pipeFor(hhwG(totMBH), hydV) }, { k: 'HHWR', sub: 'Heating hot water', p: pipeFor(hhwG(totMBH), hydV) }];
   // plumbing totals
-  const totWsfuC = sum(floors, 'wsfuC'), totWsfuH = sum(floors, 'wsfuH'), totDFU = sum(floors, 'dfu');
+  const totWsfuC = sum(floors, 'wsfuC'), totWsfuH = sum(floors, 'wsfuH'), totWsfuT = sum(floors, 'wsfuT'), totDFU = sum(floors, 'dfu');
   const roofFt2 = Math.max(...L.map(l => l.area)) * M2FT2;
   const stormGpm = roofFt2 * A.rainfall / 96.23;
   const leaders = Math.max(2, Math.ceil(stormGpm / 563));
   const stormItems = Array.from({ length: leaders }, (_, j) => ({ k: 'ST' + (j + 1), sub: 'Storm', p: { nom: leaderSize(stormGpm / leaders) } }));
   const plbItems = [
-    { k: 'CW', sub: 'Domestic cold water', p: pipeFor(wsfuToGpm(totWsfuC + totWsfuH), domV) },
+    { k: 'CW', sub: 'Domestic cold water', p: pipeFor(wsfuToGpm(totWsfuT), domV) },
     { k: 'HW', sub: 'Domestic hot water', p: pipeFor(wsfuToGpm(totWsfuH), domV) },
     { k: 'HWR', sub: 'Domestic hot water', p: { nom: 1 } },
     { k: 'SAN', sub: 'Sanitary', p: { nom: stackSize(totDFU) } },
@@ -381,8 +393,8 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
     const cwIt = pk('CW'), hwIt = pk('HW'), sanIt = pk('SAN'), vIt = pk('V');
     const px = it => it.x;
     if (f.restroomM2) {
-      const gC = wsfuToGpm(f.wsfuC + f.wsfuH), gH = wsfuToGpm(f.wsfuH), ry = rrb ? rrb[1] + 0.6 : restroomC[1];
-      seg('Plumbing', 'Domestic cold water', fl, [px(cwIt), shaftP.y1, zP], [px(cwIt), ry, zP], pSize(pipeFor(gC, domV).nom), { wsfu: r0(f.wsfuC + f.wsfuH), gpm: r0(gC), size_in: pipeFor(gC, domV).nom });
+      const gC = wsfuToGpm(f.wsfuT), gH = wsfuToGpm(f.wsfuH), ry = rrb ? rrb[1] + 0.6 : restroomC[1];
+      seg('Plumbing', 'Domestic cold water', fl, [px(cwIt), shaftP.y1, zP], [px(cwIt), ry, zP], pSize(pipeFor(gC, domV).nom), { wsfu: r0(f.wsfuT), gpm: r0(gC), size_in: pipeFor(gC, domV).nom });
       seg('Plumbing', 'Domestic cold water', fl, [rrb ? rrb[0] + 0.5 : px(cwIt) - 3, ry, zP], [rrb ? rrb[3] - 0.5 : px(cwIt) + 3, ry, zP], pSize(pipeFor(gC, domV).nom), { role: 'wet-wall header' });
       seg('Plumbing', 'Domestic hot water', fl, [px(hwIt), shaftP.y1, zP - 0.12], [px(hwIt), ry + 0.15, zP - 0.12], pSize(pipeFor(gH, domV).nom), { wsfu: r0(f.wsfuH), gpm: r0(gH), size_in: pipeFor(gH, domV).nom });
       seg('Plumbing', 'Domestic hot water', fl, [rrb ? rrb[0] + 0.5 : px(hwIt) - 3, ry + 0.15, zP - 0.12], [rrb ? rrb[3] - 0.5 : px(hwIt) + 3, ry + 0.15, zP - 0.12], pSize(pipeFor(gH, domV).nom), { role: 'wet-wall header' });
@@ -415,9 +427,9 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
     seg('Fire', 'Sprinkler main', fl, [fo, st.sy, zF], [fo, yF, zF], pSize(4), { size_in: 4, note: `Floor control valve assembly in stair ${st.id}` });
     const sprZones = f.zones.filter(z => z.bbox && !cats[z.cat].exterior);
     for (const z of f.zones.filter(z => !z.bbox)) { z.heads = Math.ceil(z.area * M2FT2 / 225); f.heads += z.heads; f.headsEst = (f.headsEst || 0) + z.heads; }
-    trunk('Fire', 'Sprinkler main', fl, fo, yF, zF, sprZones.map(z => ({ x: z.x, y: z.y, load: 1, zone: z.id })), () => pSize(4), () => pSize(2.5), { size: 'Cross main 4 in / feed 2.5 in (pipe-schedule placeholder)' });
+    trunk('Fire', 'Sprinkler main', fl, fo, yF, zF, sprZones.map(z => ({ x: z.x, y: z.y, load: 1, zone: z.id })), () => pSize(4), () => pSize(2.5), { size: 'Cross main 4 in / feed 2.5 in (placeholder — hydraulic calculation required)' });
     for (const z of sprZones) {
-      const haz = cats[z.cat].haz, sp = haz === 'LH' ? 4.57 : 3.66; // 15 ft / 12 ft
+      const haz = cats[z.cat].haz, sp = haz === 'LH' ? 4.57 : 3.35; // NFPA 13: LH 15 ft (225 ft², hydraulically calculated) / OH 11 ft (121 ft² ≤ 130 ft² max)
       const [x0, y0, , x1, y1] = z.bbox; const ix0 = x0 + sp / 2, iy0 = y0 + sp / 2;
       const zFz = z.zmax > f.zNext + 0.5 ? z.zmax - A.structDepth - 0.28 : zF;
       if (zFz !== zF) seg('Fire', 'Sprinkler main', fl, [z.x, z.y, zF], [z.x, z.y, zFz], pSize(2.5), { zone: z.id, role: 'riser to high ceiling' });
@@ -428,7 +440,7 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
         if (first !== null && last - first > 0.1) seg('Fire', 'Sprinkler branch', fl, [first, y, zFz - 0.1], [last, y, zFz - 0.1], pSize(1.25), { zone: z.id, hazard: haz });
       }
       z.heads = heads; f.heads += heads;
-      if (pts.length) add({ sys: 'Fire', sub: 'Sprinkler head', floor: fl, kind: 'points', pts: pts.map(p => [p[0], p[1], zFz - 0.18]), props: { zone: z.id, hazard: haz, heads, spacing_ft: haz === 'LH' ? 15 : 12 } });
+      if (pts.length) add({ sys: 'Fire', sub: 'Sprinkler head', floor: fl, kind: 'points', pts: pts.map(p => [p[0], p[1], zFz - 0.18]), props: { zone: z.id, hazard: haz, heads, spacing_ft: haz === 'LH' ? 15 : 11 } });
     }
     // coordination check
     if (f.ceiling < A.minClear) clearIssues.push(`${f.name}: clear height ${f.ceiling} m < target ${A.minClear} m (main duct ${f.mainDuct}, F-F ${r1(f.ftf)} m)`);
@@ -452,7 +464,7 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
       const inChase = !stormInMain || !it.k.startsWith('ST');
       if (inChase && z0 >= plbTop - 0.01) continue;              // chase ends below the roof
       let nom = it.p.nom, props = {};
-      if (it.k === 'CW') { const g = wsfuToGpm(sum(above, 'wsfuC') + sum(above, 'wsfuH')); nom = pipeFor(g, domV).nom; props = { gpm: r0(g), wsfu: r0(sum(above, 'wsfuC') + sum(above, 'wsfuH')) }; }
+      if (it.k === 'CW') { const g = wsfuToGpm(sum(above, 'wsfuT')); nom = pipeFor(g, domV).nom; props = { gpm: r0(g), wsfu: r0(sum(above, 'wsfuT')) }; }
       if (it.k === 'HW') { const g = wsfuToGpm(sum(above, 'wsfuH')); nom = pipeFor(g, domV).nom; props = { gpm: r0(g) }; }
       if (it.k === 'SAN') props = { dfu_total: r0(totDFU), note: 'Stack sized for total DFU (no reduction)' };
       if (it.k.startsWith('ST')) props = { roof_ft2: r0(roofFt2 / leaders), gpm: r0(stormGpm / leaders), rainfall_in_hr: A.rainfall };
@@ -489,7 +501,7 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
   for (const t of ['CHWP-1', 'CHWP-2', 'HHWP-1', 'HHWP-2']) roofEq.push({ sys: 'HVAC', sub: 'Pump', dims: [1.4, 0.8, 1.0], props: { tag: t } });
   const nPass = A.elevators || MEP.elevators?.passenger || 4, nFr = MEP.elevators?.freight ?? 1;
   const genLS = 0.1 * tot.light + 10 + 4 * 15 * 0.746 + A.elevatorHp * 0.746 * 1.5;
-  const fpHeadPsi = A.topOutletPsi + (L[nOcc - 1].z - zBase + 2) * FT * 0.433 + 15 - A.streetPsi * 0.8;
+  const fpHeadPsi = A.topOutletPsi + (L[roofIdx].z - zBase + 1) * FT * 0.433 + 15 - A.streetPsi * 0.8; // to the roof manifold (NYC BC Appendix Q, NFPA 14 §7.3.2.1)
   const fpHp = Math.ceil(spFlow * fpHeadPsi * 2.31 / (3960 * 0.7) / 25) * 25;
   const genKW = GEN.find(g => g >= (genLS + fpHp * 0.746) * 1.25) ?? 3000;
   const genItem = { sys: 'Electrical', sub: 'Emergency/standby generator', dims: [6 + genKW / 300, 2.5, 3], props: { tag: 'GEN-1', kW: genKW, note: 'Diesel w/ day tank, or verify battery/alt. strategy' } };
@@ -559,8 +571,8 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
   const tr = techRooms[0]?.bbox || [se.x - 10, cy - 14, zB, se.x, cy - 8, zB + 4];
   const trC = [(tr[0] + tr[3]) / 2, (tr[1] + tr[4]) / 2];
   const sanIt = plbItems.find(i => i.k === 'SAN'), cwIt0 = plbItems.find(i => i.k === 'CW');
-  seg('Plumbing', 'Sanitary', -1, [sanIt.x, sanIt.y, zB - 0.6], [sanIt.x, trC[1], zB - 0.6], pSize(stackSize(totDFU) + 1), { role: 'building drain (below B1 slab)', note: 'Invert / sewer connection / backwater valve — missing' });
-  seg('Plumbing', 'Sanitary', -1, [sanIt.x, trC[1], zB - 0.6], [se.x + 6, trC[1], zB - 0.9], pSize(stackSize(totDFU) + 1), { role: 'building drain → street sewer (direction assumed)' });
+  seg('Plumbing', 'Sanitary', -1, [sanIt.x, sanIt.y, zB - 0.6], [sanIt.x, trC[1], zB - 0.6], pSize(drainSize(totDFU)), { role: 'building drain (below B1 slab)', note: 'Invert / sewer connection / backwater valve — missing' });
+  seg('Plumbing', 'Sanitary', -1, [sanIt.x, trC[1], zB - 0.6], [se.x + 6, trC[1], zB - 0.9], pSize(drainSize(totDFU)), { role: 'building drain → street sewer (direction assumed)', slope: '1/8 in/ft' });
   for (const st of stormItems) seg('Plumbing', 'Storm', -1, [st.x, st.y, zB], [st.x, st.y, zB - 0.5], pSize(st.p.nom), { role: 'leader base' });
   seg('Plumbing', 'Storm', -1, [stormItems[0].x, stormItems[0].y, zB - 0.5], [se.x + 6, stormItems[0].y, zB - 0.8], pSize(leaderSize(stormGpm) + 2), { role: 'storm building drain (direction assumed)', note: 'NYC DEP detention may apply' });
   seg('Plumbing', 'Domestic cold water', -1, [se.x + 6, trC[1] + 1, zB + 2.5], [cwIt0.x, trC[1] + 1, zB + 2.5], pSize(cwIt0.p.nom), { role: 'water service → booster', note: 'Meter + RPZ backflow preventer' });
@@ -584,13 +596,13 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
   const boosterPsi = Math.max(0, reqPsi - A.streetPsi);
   const zoneFt = (A.maxFixturePsi - A.flushValvePsi) / 0.433;
   const pZones = Math.ceil(topFixFt / zoneFt);
-  const gpmPeak = wsfuToGpm(totWsfuC + totWsfuH);
+  const gpmPeak = wsfuToGpm(totWsfuT);
   if (ground['DWBP-1']) Object.assign(ground['DWBP-1'].props, { gpm: r0(gpmPeak), boost_psi: r0(boosterPsi), pressure_zones: pZones });
   floors.forEach(f => { f.boosted = (f.z - L[0].z + 1.2) * FT * 0.433 + A.flushValvePsi + A.frictionPsi + A.meterBfpPsi > A.streetPsi; });
 
   const summary = {
     ...tot, hvacKW, elevKW, connKVA, demandKVA, amps, svcA, genKW, fpHp, fpHeadPsi, reqPsi, boosterPsi, pZones, gpmPeak,
-    stormGpm, leaders, leaderIn: leaderSize(stormGpm / leaders), totDFU, stackIn: stackSize(totDFU), totWsfu: totWsfuC + totWsfuH,
+    stormGpm, leaders, leaderIn: leaderSize(stormGpm / leaders), totDFU, stackIn: stackSize(totDFU), totWsfu: totWsfuT,
     shafts, plantM2: plantFt, roofTechM2: rt ? rt.area : 0, overflow, concept: A.concept, nPass, nFr, nStand, spFlow, stairs: stairs.map(s => ({ id: s.id, top: s.top })),
     basement: { rooms: basRes.rooms.map(r => ({ id: r.id, area: r.area, used: r1(r.used) })), over: basRes.over.map(q => q.props.tag), foot: r1(basRes.foot) }, roofOver: roofRes.over.map(q => q.props.tag),
     fixtures: floors.reduce((s, f) => { for (const k in f.fix) s[k] = (s[k] || 0) + f.fix[k]; return s; }, {}),
@@ -603,7 +615,7 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
   const hf = summary.heightFt;
   ck(hf > 75 ? 'warn' : 'ok', 'Building', 'High-rise classification', `Highest occupied floor ≈ ${r0(hf)} ft above lowest level (>75 ft) → high-rise provisions: sprinklers, fire command center, smoke control / pressurized stairs, emergency + standby power, voice alarm, ERRCS.`, 'NYC BC §403');
   ck(hf > 120 ? 'warn' : 'ok', 'Building', 'Fire service access elevators', `Occupied floor >120 ft → fire service access elevator(s) with standby power and lobby.`, 'NYC BC §403.6.1 / §3007');
-  ck('ok', 'HVAC', 'Outdoor air (ventilation rate procedure)', `Total OA ${r0(totOA).toLocaleString()} cfm computed per zone (Rp·Pz + Ra·Az)/Ez with Ez=${A.Ez}. Occupancy from egress loads (conservative).`, 'NYC MC §403 / ASHRAE 62.1');
+  ck('ok', 'HVAC', 'Outdoor air (ventilation rate procedure)', `Total OA ${r0(totOA).toLocaleString()} cfm computed per zone (Rp·Pz + Ra·Az)/Ez with Ez=${A.Ez}. Occupancy from egress loads, NYC BC Table 1004.1.3 (conservative).`, 'NYC MC §403 / ASHRAE 62.1');
   const ductHi = E.filter(e => e.sys === 'HVAC' && e.props.role === 'main' && e.props.load && ductRect(e.props.load, A.vMain, A.maxDuctDepth).ar > 4).length;
   ck(ductHi ? 'warn' : 'ok', 'HVAC', 'Duct aspect ratio', ductHi ? `${ductHi} main segments exceed 4:1 at max depth ${A.maxDuctDepth} in — split mains or raise duct depth.` : 'All mains ≤ 4:1.', 'SMACNA / DD practice');
   ck(A.vMain <= 1500 ? 'ok' : 'warn', 'HVAC', 'Duct velocity for gallery acoustics', `Mains ${A.vMain} fpm, branches ${A.vBranch} fpm. Museum galleries usually target NC 25–30.`, 'ASHRAE Handbook (Noise)');
@@ -618,7 +630,7 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
       if (f.fixProv.wc + f.fixProv.ur < f.fixReqWC || f.fixProv.lav < f.fixReqLav) short.push(`${f.name}: WC ${f.fixProv.wc}/${f.fixReqWC}, lav ${f.fixProv.lav}/${f.fixReqLav}`);
     }
     const df = floors.slice(0, nOcc).reduce((a, f) => a + (f.fixProv ? f.fixProv.df : 0), 0);
-    ck(short.length ? 'fail' : 'ok', 'Plumbing', 'Fixtures provided vs required', short.length ? `Provided/required per floor: ${short.join(' · ')}. (Required = 50/50 split, no urinals; modelled restrooms appear all-gender single-occupancy WCs — confirm.)` : 'Modelled fixtures meet the per-floor requirement.', 'NYC PC Table 403.1');
+    ck(short.length ? 'fail' : 'ok', 'Plumbing', 'Fixtures provided vs required', short.length ? `Provided/required per floor: ${short.join(' · ')}. (Required per NYC PC Table 403.1, 50/50 split, no urinals; modelled restrooms appear all-gender single-occupancy WCs — confirm.)` : 'Modelled fixtures meet the per-floor requirement.', 'NYC PC Table 403.1');
     ck(noRR.length ? 'warn' : 'ok', 'Plumbing', 'Floors without restrooms', noRR.length ? `${noRR.join(', ')} — no restroom in the model. Fixtures may serve adjacent floors only within NYC PC §403.3 travel/one-story limits; otherwise extend the restroom stack.` : 'Every occupied floor has a restroom.', 'NYC PC §403.3');
     ck(df ? 'ok' : 'warn', 'Plumbing', 'Drinking fountains', df ? `${df} modelled.` : `None modelled — ${summary.fixtures.df} required (bottle fillers count toward half).`, 'NYC PC §410');
   }
@@ -627,18 +639,18 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
   if (plbTop < zRoof - 0.5) ck('warn', 'Plumbing', 'Vent through roof', `Plumbing chase stops at +${plbTop}; the vent stack is offset at the top floor into the main shaft to reach the roof (modelled). Storm leaders run in the main shaft.`, 'NYC PC §903');
   ck('warn', 'Coordination', 'Rooms not yet modelled', `${central ? '' : `Floor AHU rooms (≈${r0(Math.max(...floors.map(f => f.ahuRoomM2 || 0)))} m² each), `}electrical closets (≈6–8 m² per floor, stacked), fire command center, and fire pump room are placed by the tool but not in the model.`, 'DD coordination');
   ck(basRes.over.length ? 'fail' : 'ok', 'Coordination', 'Basement plant fit', `${techRooms.length} technical rooms (${r0(techRooms.reduce((a, r) => a + r.area, 0))} m²). ${basRes.over.length ? 'Not fitting: ' + basRes.over.map(q => q.props.tag).join(', ') + '.' : 'All service equipment fits with 1.0 m clearance.'}`, 'DD coordination');
-  ck('warn', 'Plumbing', 'Storm design rate', `Using ${A.rainfall} in/hr (workbook 100-yr 1-hr) → ${r0(stormGpm)} gpm, ${leaders} leaders × ${summary.leaderIn} in. Confirm NYC PC design rate and DEP detention/release rate.`, 'NYC PC §1106 / DEP');
-  ck('warn', 'Plumbing', 'Sanitary stack', `${r0(totDFU)} DFU → ${summary.stackIn} in stack; building drain one size up. Kitchen grease interceptor TBD.`, 'NYC PC Table 710.1');
+  ck('warn', 'Plumbing', 'Storm design rate', `Using ${A.rainfall} in/hr (NYC PC §1106.1) → ${r0(stormGpm)} gpm, ${leaders} leaders × ${summary.leaderIn} in. Secondary drains tied into primary: 6 in/hr combined (§1108.3). Confirm DEP detention/release rate.`, 'NYC PC §1106.1 / §1108.3 / DEP');
+  ck('warn', 'Plumbing', 'Sanitary stack', `${r0(totDFU)} DFU → ${summary.stackIn} in stack; building drain ${drainSize(totDFU)} in at 1/8 in/ft. Kitchen grease interceptor TBD.`, 'NYC PC Tables 710.1(1)/(2)');
   ck(svcA > 4000 ? 'warn' : 'ok', 'Electrical', 'Service size', `Connected ${r0(connKVA)} kVA → demand+spare ${r0(demandKVA)} kVA ≈ ${r0(amps)} A → ${svcA} A @ ${A.voltage}Y/277 V${svcA > 4000 ? ' (exceeds 4000 A: multiple services / spot network per Con Edison)' : ''}.`, 'NYC EC Art. 220/230');
   ck('warn', 'Electrical', 'Emergency & standby power', `Generator ≈ ${genKW} kW (egress lighting, FA, smoke control, fire pump ${fpHp} hp, fire service elevator). Separate emergency risers, 2-hr protection.`, 'NYC BC §403.4.8 / EC Art. 700/701');
-  ck('warn', 'Fire', 'Standpipes & fire pump', `${nStand} combined standpipes (6 in), one per modelled stair (${stairs.map(s => s.id + ' to +' + r1(s.top)).join(', ')}). Fire pump ≈ ${spFlow} gpm @ ${r0(fpHeadPsi)} psi (${fpHp} hp). ${fpHeadPsi + A.streetPsi > 175 ? 'System pressure >175 psi → high-pressure components / zoning.' : ''}`, 'NYC BC §905 / NFPA 14, 20');
+  ck('warn', 'Fire', 'Standpipes & fire pump', `${nStand} combined standpipes (6 in), one per modelled stair (${stairs.map(s => s.id + ' to +' + r1(s.top)).join(', ')}). Fire pump ≈ ${spFlow} gpm @ ${r0(fpHeadPsi)} psi (${fpHp} hp) for ${A.topOutletPsi} psi at the roof manifold. ${fpHeadPsi + A.streetPsi > 175 ? 'System pressure >175 psi → high-pressure components / zoning.' : ''}`, 'NYC BC §905 / App. Q (NFPA 14 §7.8.1 mod.) / NFPA 20');
   ck(nPass + nFr ? 'warn' : 'fail', 'Building', 'Elevators', `${nPass} passenger + ${nFr} freight in the model. Confirm which car is the fire service access elevator (lobby, standby power) and car capacities for the electrical load.`, 'NYC BC §3007');
   { const imm = floors.flatMap(f => f.zones.filter(z => z.projectors)); const np = imm.reduce((a, z) => a + z.projectors, 0);
     ck('warn', 'AV / HVAC', 'Immersive halls', `${imm.length} halls, ${np} ceiling projectors (${A.projImgW} m image width, ${r0(A.projOverlap * 100)}% blend, ${A.projKW} kW each) + AV racks = ${r0(imm.reduce((a, z) => a + z.avKW, 0))} kW of heat. Supply via low-velocity ceiling diffusers inset from the projection walls; high-level return over the projector ring; light-tight, NC 25 target. Confirm projector model, throw distances and whether the floor is projected too.`, 'Design basis');
     const desks = floors.reduce((a, f) => a + f.zones.filter(z => z.desks).reduce((b, z) => b + z.desks, 0), 0);
     if (desks) ck('ok', 'Electrical', 'Office workstations', `${desks} desks at ${A.deskM2} m²/desk, ${A.deskW} W each (PC + 2 monitors) + 0.25 W/ft² misc.`, 'Design basis');
   }
-  ck('ok', 'Fire', 'Sprinkler layout', `${tot.heads} heads incl. ${floors.reduce((a, f) => a + (f.headsEst || 0), 0)} estimated in unassigned circulation/support (LH 15 ft / OH 12 ft spacing). Hydraulic calc not performed.`, 'NYC BC §903 / NFPA 13');
+  ck('ok', 'Fire', 'Sprinkler layout', `${tot.heads} heads incl. ${floors.reduce((a, f) => a + (f.headsEst || 0), 0)} estimated in unassigned circulation/support (LH 15 ft / OH 11 ft spacing; OH max 130 ft²/head). Hydraulic calc not performed.`, 'NYC BC §903 / NFPA 13');
   ck('info', 'All', 'Code verification', 'Values cited as basis only; editions & amendments must be verified by licensed NYC MEP/FP engineers. Not a permit compliance certification.', '—');
 
   return { elements: E, floors, summary, audit, shafts, hvacItems, plbItems };
