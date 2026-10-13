@@ -256,6 +256,19 @@ function resize() {
   const s = radius * 1.1; ocam.left = -s * w / h; ocam.right = s * w / h; ocam.top = s; ocam.bottom = -s; ocam.updateProjectionMatrix();
 }
 addEventListener('resize', resize);
+// right panel: drag the left edge to resize (width remembered per browser)
+{
+  const main = document.querySelector('main'), grip = $('#rgrip'), DEF = 390;
+  const setW = w => { w = Math.round(Math.min(Math.max(w, 300), Math.max(320, innerWidth - 560))); main.style.setProperty('--rw', w + 'px'); return w; };
+  let rw = LS('mep.rw'); if (rw) setW(rw);
+  let drag = false;
+  grip.addEventListener('pointerdown', e => { drag = true; grip.classList.add('on'); document.body.classList.add('resizing'); grip.setPointerCapture(e.pointerId); });
+  grip.addEventListener('pointermove', e => { if (!drag) return; rw = setW(innerWidth - e.clientX); resize(); });
+  const end = () => { if (!drag) return; drag = false; grip.classList.remove('on'); document.body.classList.remove('resizing'); SS('mep.rw', rw); resize(); };
+  grip.addEventListener('pointerup', end); grip.addEventListener('pointercancel', end);
+  grip.addEventListener('dblclick', () => { rw = setW(DEF); SS('mep.rw', null); resize(); });
+}
+addEventListener('keydown', e => { if (e.key === 'Escape' && kpiSel) { kpiSel = null; if (tab === 'sum') renderPane(); } });
 function setView(v) {
   const dirs = { iso: [-1, -1.15, 0.85], iso2: [1.1, -1, 0.8], top: [0, -0.001, 1], front: [0, -1, 0.02], side: [1, 0, 0.02] };
   const d = new THREE.Vector3(...dirs[v]).normalize();
@@ -345,19 +358,72 @@ $('#bBg').onclick = () => { dark = !dark; scene.background = dark ? BG.dark : BG
 // ---------- right panel ----------
 function syncTabs() { $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === tab)); }
 $('#tabs').onclick = e => { if (e.target.dataset.t) { tab = e.target.dataset.t; syncTabs(); renderPane(); } };
-const kpi = (cls, v, l) => `<div class="kpi ${cls}"><b>${v}</b><small>${l}</small></div>`;
+let kpiSel = null;
+const kpi = (cls, v, l, k) => `<div class="kpi ${cls}${kpiSel === k ? ' sel' : ''}" data-k="${k}"><b>${v}</b><small>${l}</small></div>`;
+// code basis + formula, with the current numbers substituted
+function kpiInfo(k, s) {
+  const f0 = v => fmt(v), f1 = v => fmt(v, 1), f2 = v => fmt(v, 2);
+  const cat = x => C[x] || {};
+  const I = {
+    area: ['Gross floor area', 'Model slab areas (FBX slab-cut). Zoning floor area per ZR §12-10 is defined differently.',
+      `Σ slab area of all levels × 10.7639\n= ${f0(s.grossFt2 / M2FT2)} m² × 10.7639 = ${f0(s.grossFt2)} ft²`, 'Includes the roof technical level; not a zoning FAR figure.'],
+    occ: ['Occupant load', 'NYC BC 2022 §1004.1 / Table 1004.1.3; fixed seats §1004.3',
+      `Pz = Σ zone area ÷ occupant load factor (rounded up per zone)\n` +
+      `Gallery ${cat('gallery').olf} net · Immersive ${cat('immersive').olf} net · Lobby/café ${cat('lobby').olf} net · Food ${cat('food').olf} net\n` +
+      `Shop ${cat('shop').olfGrade ?? cat('shop').olf} gross at grade (${cat('shop').olf} other floors) · Office ${cat('office').olf} gross · Technical ${cat('technical').olf} gross\n` +
+      `Auditorium = ${A.auditoriumSeats > 0 ? A.auditoriumSeats + ' fixed seats' : cat('auditorium').olf + ' net (chairs only)'}\n= ${f0(s.occ)} persons`,
+      'Egress basis; also used for ventilation and fixtures (conservative). Immersive halls use exhibit gallery/museum 30 net; standing event use would be 5 net.'],
+    cfm: ['Supply air', 'Design basis (sensible load); minimum per NYC MC §403 outdoor air',
+      `per zone: V = max( qs ÷ (1.08 × ΔT), Voz, 0.4 cfm/ft² × area ), rounded up to 50\n` +
+      `qs = area × ${A.envLoad} Btuh/ft² + Pz × ${A.peopleSens} + (lighting + plug kW) × 3412\nΔT = ${A.supplyDT} °F\nΣ = ${f0(s.cfm)} cfm`, 'Rule of thumb for DD coordination, not a load calculation.'],
+    oa: ['Outdoor air (ventilation rate procedure)', 'NYC MC §403.3 / ASHRAE 62.1 §6.2, Tables 6.2.2.1 & 6.2.2.2',
+      `per zone: Voz = (Rp × Pz + Ra × Az) ÷ Ez\nEz = ${A.Ez}  (ceiling supply of warm air)\n` +
+      `Rp/Ra: gallery ${cat('gallery').Rp}/${cat('gallery').Ra} · auditorium ${cat('auditorium').Rp}/${cat('auditorium').Ra} · office ${cat('office').Rp}/${cat('office').Ra} · food ${cat('food').Rp}/${cat('food').Ra}\nΣ Voz (100% OA DOAS) = ${f0(s.oa)} cfm`,
+      'Pz taken from egress occupant load, so OA is on the high side.'],
+    tons: ['Cooling', 'Design basis',
+      `per zone: tons = (qs + Pz × ${A.peopleLat} + 4.5 × Voz × 13.4) ÷ 12,000\nΣ = ${f0(s.tons)} tons`, '4.5 × cfm × Δh (13.4 Btu/lb, NYC summer OA). Rule of thumb.'],
+    mbh: ['Heating', 'Design basis',
+      `per zone: MBH = (area × ${A.heatLoad} Btuh/ft² + 1.08 × Voz × (70 − ${A.oaWinter})) ÷ 1000\nΣ = ${f0(s.mbh)} MBH`, 'No energy-recovery credit (conservative).'],
+    gpm: ['Peak domestic water demand', 'NYC PC Appendix E, Table E103.3(2) fixture units; Table E103.3(3) flush-valve curve',
+      `WSFU (total) = WC × 10 + lav × 2 + service sink × 3 + DF × 0.25 + kitchen × 20\n= ${f0(s.totWsfu)} WSFU\ngpm = Hunter curve (flush valve) → ${f0(s.gpmPeak)} gpm`, 'Fixture counts from the restroom model where modelled, otherwise from Table 403.1.'],
+    boost: ['Booster pump & pressure zones', 'NYC PC Table 604.3 (flushometer 25 psi), §604.8 (85 psi max static)',
+      `P_req = ${A.flushValvePsi} psi + H × 0.433 + ${A.frictionPsi} friction + ${A.meterBfpPsi} meter/RPZ\nH = ${f0(s.topFixFt)} ft → P_req = ${f0(s.reqPsi)} psi\nboost = P_req − ${A.streetPsi} psi street = ${f0(s.boosterPsi)} psi\nzones = ⌈H ÷ ((${A.maxFixturePsi} − ${A.flushValvePsi}) ÷ 0.433)⌉ = ${s.pZones}`, 'Street pressure is an assumption until a hydrant flow test is available.'],
+    stack: ['Sanitary stack', 'NYC PC Table 709.1 (DFU); Table 710.1(2) stacks; Table 710.1(1) building drain',
+      `DFU = WC × 4 + lav × 1 + service sink × 3 + DF × 0.5 + floor drain 2 (+ kitchen 12)\n= ${f0(s.totDFU)} DFU\nstack (> 3 branch intervals): ≤ 500 → 4 in, ≤ 1100 → 5 in, ≤ 1900 → 6 in\n→ ${s.stackIn} in stack\nbuilding drain at 1/8 in/ft: ≤ 180 → 4 in, ≤ 390 → 5 in, ≤ 700 → 6 in`, ''],
+    storm: ['Storm leaders', 'NYC PC §1106.1 (3 in/hr); Table 1106.3 vertical leaders; §1108.3 secondary drainage',
+      `Q = roof area × i ÷ 96.23\n= ${f0(s.roofFt2)} ft² × ${A.rainfall} in/hr ÷ 96.23 = ${f0(s.stormGpm)} gpm\nleaders n = max(2, ⌈Q ÷ 563⌉) = ${s.leaders}\nsize per leader (${f0(s.stormGpm / s.leaders)} gpm): 4 in ≤ 192 · 5 in ≤ 360 · 6 in ≤ 563 → ${s.leaderIn} in`, 'Roof area = largest floor plate (proxy). Secondary drains tied to primary: 6 in/hr combined.'],
+    kva: ['Electrical service', 'NYC Electrical Code Art. 220 / 230 (demand factor is a DD assumption)',
+      `connected kVA = (lighting ${f0(s.light)} + plug ${f0(s.plug)} + HVAC ${f0(s.hvacKW)} + elevators ${f0(s.elevKW)} + fire pump ${f0(s.fpHp * 0.746)} kW) ÷ pf ${A.pf}\n= ${f0(s.connKVA)} kVA\ndemand = connected × ${A.demand} × (1 + ${A.spare}) = ${f0(s.demandKVA)} kVA\nI = kVA × 1000 ÷ (√3 × ${A.voltage} V) = ${f0(s.amps)} A → ${s.svcA} A`, 'Blanket demand factor, not an Article 220 calculation.'],
+    gen: ['Emergency / standby generator', 'NYC BC §403.4.8, §2702, §3007.8; NFPA 110',
+      `life-safety kW = 0.1 × lighting + 10 (fire alarm) + 4 × 15 hp × 0.746 (smoke control) + ${A.elevatorHp} hp × 0.746 × 1.5 (FSE)\n= ${f1(s.genLS)} kW\n+ fire pump ${s.fpHp} hp × 0.746 = ${f1(s.fpHp * 0.746)} kW\nsize = next standard ≥ 1.25 × total → ${f0(s.genKW)} kW`, 'Running loads only; fire pump motor starting not included. Smoke-control fan sizes are placeholders.'],
+    heads: ['Sprinkler heads', 'NYC BC §903; NFPA 13 Table 10.2.4.2.1(a)/(b)',
+      `light hazard: 15 ft × 15 ft = 225 ft²/head (hydraulically calculated)\nordinary hazard: 11 ft × 11 ft = 121 ft²/head (≤ 130 ft² max)\nunassigned areas: area ÷ 225 ft²\nΣ = ${f0(s.heads)} heads`, 'Heads placed only where the slab exists. Hydraulic calculation not performed.'],
+    fp: ['Fire pump', 'NFPA 14 §7.10 (flow); NYC BC Appendix Q mod. to NFPA 14 §7.8.1 (65 psi) and §7.3.2.1 (roof manifold); NFPA 20',
+      `flow = 500 + 250 × (standpipes − 1), max 1000 = ${f0(s.spFlow)} gpm  (${s.nStand} standpipes)\n` +
+      `pressure = ${A.topOutletPsi} psi + ${f0(s.fpElevFt)} ft × 0.433 + 15 friction − 0.8 × ${A.streetPsi} street\n= ${f0(s.fpHeadPsi)} psi\n` +
+      `hp = gpm × psi × 2.31 ÷ (3960 × 0.7), rounded up to 25\n= ${f0(s.spFlow)} × ${f0(s.fpHeadPsi)} × 2.31 ÷ 2772 → ${s.fpHp} hp`, 'Suction pressure should come from a hydrant flow test (residual), not 0.8 × static.'],
+  }[k];
+  if (!I) return '';
+  return `<div class="kinfo"><button class="x" data-kx title="Close">✕</button><h4>${I[0]}</h4><div class="code">${I[1]}</div><div class="f">${I[2]}</div>${I[3] ? `<p>${I[3]}</p>` : ''}</div>`;
+}
 function renderPane() {
   const s = model.summary, pane = $('#pane');
   if (tab === 'sum') {
     const cnt = model.audit.reduce((a, x) => (a[x.status] = (a[x.status] || 0) + 1, a), {});
-    pane.innerHTML = `<div class="kpis">
-      ${kpi('', fmt(s.grossFt2) + ' ft²', `Gross floor area (${fmt(s.grossFt2 / M2FT2)} m²)`)}${kpi('', fmt(s.occ), 'Occupant load (egress basis)')}
-      ${kpi('hv', fmt(s.cfm), 'Supply air cfm')}${kpi('hv', fmt(s.oa), 'Outdoor air cfm')}
-      ${kpi('hv', fmt(s.tons), 'Cooling tons')}${kpi('hv', fmt(s.mbh), 'Heating MBH')}
-      ${kpi('pl', fmt(s.gpmPeak) + ' gpm', `Peak domestic demand (${fmt(s.totWsfu)} WSFU)`)}${kpi('pl', fmt(s.boosterPsi) + ' psi', `Booster boost · ${s.pZones} pressure zones`)}
-      ${kpi('pl', s.stackIn + ' in', `Sanitary stack (${fmt(s.totDFU)} DFU)`)}${kpi('pl', s.leaders + '×' + s.leaderIn + ' in', `Storm leaders (${fmt(s.stormGpm)} gpm)`)}
-      ${kpi('el', fmt(s.demandKVA) + ' kVA', `Service demand + spare · ${s.svcA} A`)}${kpi('el', fmt(s.genKW) + ' kW', 'Emergency / standby generator')}
-      ${kpi('fp', fmt(s.heads), 'Sprinkler heads')}${kpi('fp', s.fpHp + ' hp', `Fire pump ${s.spFlow} gpm @ ${fmt(s.fpHeadPsi)} psi`)}
+    const K = [
+      ['area', '', fmt(s.grossFt2) + ' ft²', `Gross floor area (${fmt(s.grossFt2 / M2FT2)} m²)`], ['occ', '', fmt(s.occ), 'Occupant load (egress basis)'],
+      ['cfm', 'hv', fmt(s.cfm), 'Supply air cfm'], ['oa', 'hv', fmt(s.oa), 'Outdoor air cfm'],
+      ['tons', 'hv', fmt(s.tons), 'Cooling tons'], ['mbh', 'hv', fmt(s.mbh), 'Heating MBH'],
+      ['gpm', 'pl', fmt(s.gpmPeak) + ' gpm', `Peak domestic demand (${fmt(s.totWsfu)} WSFU)`], ['boost', 'pl', fmt(s.boosterPsi) + ' psi', `Booster boost · ${s.pZones} pressure zones`],
+      ['stack', 'pl', s.stackIn + ' in', `Sanitary stack (${fmt(s.totDFU)} DFU)`], ['storm', 'pl', s.leaders + '×' + s.leaderIn + ' in', `Storm leaders (${fmt(s.stormGpm)} gpm)`],
+      ['kva', 'el', fmt(s.demandKVA) + ' kVA', `Service demand + spare · ${s.svcA} A`], ['gen', 'el', fmt(s.genKW) + ' kW', 'Emergency / standby generator'],
+      ['heads', 'fp', fmt(s.heads), 'Sprinkler heads'], ['fp', 'fp', s.fpHp + ' hp', `Fire pump ${s.spFlow} gpm @ ${fmt(s.fpHeadPsi)} psi`],
+    ];
+    // detail box goes right after the row of the selected card
+    let cards = '';
+    K.forEach(([k, c, v, l], i) => { cards += kpi(c, v, l, k); if (kpiSel && i % 2 === 1 && (K[i][0] === kpiSel || K[i - 1][0] === kpiSel)) cards += kpiInfo(kpiSel, s); });
+    pane.innerHTML = `<div class="kpis${kpiSel ? ' focus' : ''}">
+      ${cards}
     </div>
     <h3 style="font-size:12px;margin:6px 0">Shafts (sized on the most loaded segment)</h3>
     <table><tr><th>Shaft</th><th>L × D (m)</th><th>Area m²</th><th>Needed m²</th></tr>${Object.values(s.shafts).map(x => `<tr><td>${x.name}</td><td>${x.len.toFixed(2)} × ${x.dep.toFixed(2)}</td><td>${x.area}</td><td style="color:${x.fits ? 'var(--ok)' : 'var(--fail)'}">${x.reqArea ?? '–'}</td></tr>`).join('')}</table>
@@ -369,6 +435,8 @@ function renderPane() {
     <h3 style="font-size:12px;margin:12px 0 6px">Load split</h3>
     <table><tr><th>Component</th><th>kW</th></tr><tr><td>Lighting</td><td>${fmt(s.light)}</td></tr><tr><td>Plug / media / process</td><td>${fmt(s.plug)}</td></tr><tr><td>HVAC (chillers, fans, pumps)</td><td>${fmt(s.hvacKW)}</td></tr><tr><td>Elevators</td><td>${fmt(s.elevKW)}</td></tr><tr><td>Fire pump</td><td>${fmt(s.fpHp * 0.746)}</td></tr><tr><td><b>Connected kVA</b></td><td><b>${fmt(s.connKVA)}</b></td></tr></table>
     <div class="note">Concept: ${A.concept === 'central' ? 'central roof AHUs with supply/return shafts' : 'roof DOAS (ERV) + floor-by-floor AHUs, CHW/HHW from roof plant'}. DD rules of thumb, not engineered calculations. Click any element in the model to inspect it.</div>`;
+    pane.querySelectorAll('.kpi[data-k]').forEach(el => el.onclick = () => { kpiSel = kpiSel === el.dataset.k ? null : el.dataset.k; renderPane(); });
+    pane.querySelector('[data-kx]')?.addEventListener('click', () => { kpiSel = null; renderPane(); });
   } else if (tab === 'flo') {
     pane.innerHTML = `<table><thead><tr><th>Floor</th><th>Elev m</th><th>m²</th><th>Occ</th><th>Supply cfm</th><th>OA cfm</th><th>Tons</th><th>Main duct</th><th>Clear m</th><th>WC prov/req</th><th>kVA</th><th>Heads</th><th>Boost</th></tr></thead><tbody>
     ${model.floors.map(f => `<tr data-f="${f.idx}" class="${floorSel === f.idx ? 'sel' : ''}"><td>${f.name}</td><td>${f.z.toFixed(1)}</td><td>${fmt(f.grossM2)}</td><td>${fmt(f.occ)}</td><td>${fmt(f.cfm)}</td><td>${fmt(f.oa)}</td><td>${fmt(f.tons)}</td><td>${f.mainDuct || '–'}</td><td style="color:${f.ceiling != null && f.ceiling < A.minClear ? 'var(--fail)' : 'inherit'}">${f.ceiling ?? '–'}</td><td style="color:${f.occ && (!f.fixProv || f.fixProv.wc < f.fixReqWC) ? 'var(--fail)' : 'inherit'}">${f.fixProv ? f.fixProv.wc : '–'}/${f.fixReqWC}</td><td>${fmt(f.kva)}</td><td>${fmt(f.heads)}</td><td>${f.boosted ? 'yes' : ''}</td></tr>`).join('')}</tbody></table>

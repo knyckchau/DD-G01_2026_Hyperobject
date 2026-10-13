@@ -501,7 +501,8 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
   for (const t of ['CHWP-1', 'CHWP-2', 'HHWP-1', 'HHWP-2']) roofEq.push({ sys: 'HVAC', sub: 'Pump', dims: [1.4, 0.8, 1.0], props: { tag: t } });
   const nPass = A.elevators || MEP.elevators?.passenger || 4, nFr = MEP.elevators?.freight ?? 1;
   const genLS = 0.1 * tot.light + 10 + 4 * 15 * 0.746 + A.elevatorHp * 0.746 * 1.5;
-  const fpHeadPsi = A.topOutletPsi + (L[roofIdx].z - zBase + 1) * FT * 0.433 + 15 - A.streetPsi * 0.8; // to the roof manifold (NYC BC Appendix Q, NFPA 14 §7.3.2.1)
+  const fpElevFt = (L[roofIdx].z - zBase + 1) * FT;
+  const fpHeadPsi = A.topOutletPsi + fpElevFt * 0.433 + 15 - A.streetPsi * 0.8; // to the roof manifold (NYC BC Appendix Q, NFPA 14 §7.3.2.1)
   const fpHp = Math.ceil(spFlow * fpHeadPsi * 2.31 / (3960 * 0.7) / 25) * 25;
   const genKW = GEN.find(g => g >= (genLS + fpHp * 0.746) * 1.25) ?? 3000;
   const genItem = { sys: 'Electrical', sub: 'Emergency/standby generator', dims: [6 + genKW / 300, 2.5, 3], props: { tag: 'GEN-1', kW: genKW, note: 'Diesel w/ day tank, or verify battery/alt. strategy' } };
@@ -606,7 +607,7 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
     shafts, plantM2: plantFt, roofTechM2: rt ? rt.area : 0, overflow, concept: A.concept, nPass, nFr, nStand, spFlow, stairs: stairs.map(s => ({ id: s.id, top: s.top })),
     basement: { rooms: basRes.rooms.map(r => ({ id: r.id, area: r.area, used: r1(r.used) })), over: basRes.over.map(q => q.props.tag), foot: r1(basRes.foot) }, roofOver: roofRes.over.map(q => q.props.tag),
     fixtures: floors.reduce((s, f) => { for (const k in f.fix) s[k] = (s[k] || 0) + f.fix[k]; return s; }, {}),
-    heightFt: (L[nOcc - 1].z - L[0].z) * FT,
+    heightFt: (L[nOcc - 1].z - L[0].z) * FT, roofFt2, genLS, fpElevFt, topFixFt,
   };
 
   // ---- 7. audit / code-oriented DD checks ----

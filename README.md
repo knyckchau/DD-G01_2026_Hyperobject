@@ -17,6 +17,7 @@ It reads FBX exports, applies code-derived sizing rules (NYC Building / Mechanic
 - **Electrical** – connected/demand load, service size, busway and emergency risers, generator sizing, office workstation loads.
 - **Fire** – sprinkler layout by hazard class, one standpipe per stair, fire pump sizing.
 - **Coordination checks** – shaft capacity (shafts grow automatically if risers do not fit), ceiling clear height, plant fit, fixtures provided vs required, high-rise triggers.
+- **Code basis on the Summary tab** – click any summary figure to dim the others and show its NYC code reference and the formula with the current numbers; drag the left edge of the right panel to widen it (double-click to reset).
 - **Viewer** – Rhino-style collapsible layer trees (program volumes, structure), ghosted cores and restrooms, floor and basement filters, explode, click-to-inspect rooms and elements, editable assumptions.
 - **Exports** – Rhino `.3dm` (nested layers, centerlines, user text), OBJ, CSV floor schedule, JSON model, PNG at 4K / 8K.
 
