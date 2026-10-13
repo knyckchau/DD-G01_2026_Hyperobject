@@ -17,7 +17,7 @@ It reads FBX exports, applies code-derived sizing rules (NYC Building / Mechanic
 - **Electrical** – connected/demand load, service size, busway and emergency risers, generator sizing, office workstation loads.
 - **Fire** – sprinkler layout by hazard class, one standpipe per stair, fire pump sizing.
 - **Coordination checks** – shaft capacity (shafts grow automatically if risers do not fit), ceiling clear height, plant fit, fixtures provided vs required, high-rise triggers.
-- **Code basis on the Summary tab** – click any summary figure to dim the others and show its NYC code reference and the formula with the current numbers; drag the left edge of the right panel to widen it (double-click to reset).
+- **Code basis on the Summary tab** – click any summary figure to dim the others and show its NYC code reference and the formula with the current numbers; drag the inner edge of either side panel to resize it (double-click to reset).
 - **Viewer** – Rhino-style collapsible layer trees (program volumes, structure), ghosted cores and restrooms, floor and basement filters, explode, click-to-inspect rooms and elements, editable assumptions.
 - **Exports** – Rhino `.3dm` (nested layers, centerlines, user text), OBJ, CSV floor schedule, JSON model, PNG at 4K / 8K.
 
@@ -32,6 +32,8 @@ python tools/serve.py            # opens http://localhost:8765/web/
 Or serve the repo root with any static server (e.g. `python -m http.server 8765`) and open `/web/`. The **Doc** button in the viewer renders this README and the methodology.
 
 ### GitHub Pages
+
+Before each deploy, bump `APP_V` in `web/index.html` and the matching `?v=` on the `engine.js` import at the top of `web/app.js`, so browsers load the new files instead of cached ones.
 
 Settings → Pages → **Deploy from a branch** → `main` / `(root)`. The root `index.html` redirects to the viewer in `web/` (the empty `.nojekyll` file disables Jekyll processing).
 Alternatively use **GitHub Actions** as source with `docs/github-pages-workflow.yml` copied to `.github/workflows/pages.yml`.

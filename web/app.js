@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { generate, DEFAULTS, CATS, MISSING, IN, M2FT2 } from './engine.js';
+import { generate, DEFAULTS, CATS, MISSING, IN, M2FT2 } from './engine.js?v=20261013b'; // keep in step with APP_V in index.html
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -83,7 +83,7 @@ $('#wallOp').oninput = e => { wallOp = +e.target.value; detG.children.forEach(m 
 function loadDetail() {
   return new Promise(res => {
     if (window.DETAIL) return res(window.DETAIL);
-    const sc = document.createElement('script'); sc.src = (window.DATA_DIR || '') + 'detail-data.js'; sc.onload = () => res(window.DETAIL); sc.onerror = () => res(null); document.head.appendChild(sc);
+    const sc = document.createElement('script'); sc.src = (window.DATA_DIR || '') + 'detail-data.js?v=' + (window.APP_V || ''); sc.onload = () => res(window.DETAIL); sc.onerror = () => res(null); document.head.appendChild(sc);
   }).then(D => {
     if (!D) return;
     const b64 = (s, T) => { const bin = atob(s), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new T(u.buffer); };
@@ -131,7 +131,7 @@ const STRCOL = n => /RC|concrete|slab-on-grade|RAMP|pre-cast/i.test(n) ? '#b5aea
 const strG = new THREE.Group(); root.add(strG); let strState = 0, strOp = 0.6;
 function loadStructure() {
   strState = 1; toast('Loading structure…');
-  const sc = document.createElement('script'); sc.src = (window.DATA_DIR || '') + 'structure-data.js';
+  const sc = document.createElement('script'); sc.src = (window.DATA_DIR || '') + 'structure-data.js?v=' + (window.APP_V || '');
   sc.onerror = () => { strState = 0; toast('structure-data.js not found'); };
   sc.onload = () => {
     const D = window.STRUCTURE;
@@ -256,17 +256,23 @@ function resize() {
   const s = radius * 1.1; ocam.left = -s * w / h; ocam.right = s * w / h; ocam.top = s; ocam.bottom = -s; ocam.updateProjectionMatrix();
 }
 addEventListener('resize', resize);
-// right panel: drag the left edge to resize (width remembered per browser)
+// side panels: drag the inner edge to resize (widths remembered per browser, double-click to reset)
 {
-  const main = document.querySelector('main'), grip = $('#rgrip'), DEF = 390;
-  const setW = w => { w = Math.round(Math.min(Math.max(w, 300), Math.max(320, innerWidth - 560))); main.style.setProperty('--rw', w + 'px'); return w; };
-  let rw = LS('mep.rw'); if (rw) setW(rw);
-  let drag = false;
-  grip.addEventListener('pointerdown', e => { drag = true; grip.classList.add('on'); document.body.classList.add('resizing'); grip.setPointerCapture(e.pointerId); });
-  grip.addEventListener('pointermove', e => { if (!drag) return; rw = setW(innerWidth - e.clientX); resize(); });
-  const end = () => { if (!drag) return; drag = false; grip.classList.remove('on'); document.body.classList.remove('resizing'); SS('mep.rw', rw); resize(); };
-  grip.addEventListener('pointerup', end); grip.addEventListener('pointercancel', end);
-  grip.addEventListener('dblclick', () => { rw = setW(DEF); SS('mep.rw', null); resize(); });
+  const main = document.querySelector('main');
+  const cur = v => parseFloat(getComputedStyle(main).getPropertyValue(v)) || (v === '--lw' ? 250 : 390);
+  const side = (gripId, cssVar, key, def, min, widthFrom, otherVar) => {
+    const grip = $('#' + gripId);
+    const setW = w => { w = Math.round(Math.min(Math.max(w, min), Math.max(min, innerWidth - cur(otherVar) - 420))); main.style.setProperty(cssVar, w + 'px'); return w; };
+    let w = LS(key); if (w) setW(w);
+    let drag = false;
+    grip.addEventListener('pointerdown', e => { drag = true; grip.classList.add('on'); document.body.classList.add('resizing'); grip.setPointerCapture(e.pointerId); });
+    grip.addEventListener('pointermove', e => { if (!drag) return; w = setW(widthFrom(e.clientX)); resize(); });
+    const end = () => { if (!drag) return; drag = false; grip.classList.remove('on'); document.body.classList.remove('resizing'); SS(key, w); resize(); };
+    grip.addEventListener('pointerup', end); grip.addEventListener('pointercancel', end);
+    grip.addEventListener('dblclick', () => { main.style.removeProperty(cssVar); w = null; SS(key, null); resize(); });
+  };
+  side('lgrip', '--lw', 'mep.lw', 250, 200, x => x, '--rw');
+  side('rgrip', '--rw', 'mep.rw', 390, 300, x => innerWidth - x, '--lw');
 }
 addEventListener('keydown', e => { if (e.key === 'Escape' && kpiSel) { kpiSel = null; if (tab === 'sum') renderPane(); } });
 function setView(v) {

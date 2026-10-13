@@ -20,11 +20,13 @@ button,select,input{font:inherit;color:inherit}
 .btn:hover{border-color:#b9bcc2}
 .btn.pri{background:var(--ink);color:#fff;border-color:var(--ink)}
 .btn.on{background:#e8efff;border-color:var(--acc);color:var(--acc)}
-main{position:absolute;top:46px;bottom:0;left:0;right:0;display:grid;grid-template-columns:250px 1fr var(--rw,390px)}
+main{position:absolute;top:46px;bottom:0;left:0;right:0;display:grid;grid-template-columns:var(--lw,250px) 1fr var(--rw,390px)}
 aside{background:var(--panel);overflow:auto;border-right:1px solid var(--line)}
 aside.r{border-right:0;border-left:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden;position:relative}
-#rgrip{position:absolute;left:-3px;top:0;bottom:0;width:7px;cursor:col-resize;z-index:5}
-#rgrip:hover,#rgrip.on{background:linear-gradient(90deg,transparent 2px,var(--acc) 2px,var(--acc) 4px,transparent 4px)}
+.grip{position:absolute;top:0;bottom:0;width:7px;cursor:col-resize;z-index:5}
+#lgrip{left:calc(var(--lw,250px) - 4px)}
+#rgrip{right:calc(var(--rw,390px) - 4px)}
+.grip:hover,.grip.on{background:linear-gradient(90deg,transparent 3px,var(--acc) 3px,var(--acc) 5px,transparent 5px)}
 body.resizing{cursor:col-resize;user-select:none}
 .kpi{cursor:pointer;transition:opacity .15s,filter .15s,box-shadow .15s}
 .kpi:hover{box-shadow:0 0 0 1px #b9bcc2}
@@ -147,13 +149,15 @@ details summary{cursor:pointer;color:var(--mute);font-size:12px;margin:6px 0}
 </aside>
 <div id="view"><div id="status"></div><div id="hud"><button class="btn" id="bFit">Fit</button><button class="btn" id="bBg">Dark bg</button></div><div id="legend"></div><div id="toast"></div></div>
 <aside class="r">
-  <div id="rgrip" title="Drag to resize · double-click to reset"></div>
   <div class="tabs" id="tabs"><button data-t="sum" class="on">Summary</button><button data-t="flo">Floors</button><button data-t="eq">Equipment</button><button data-t="aud">Checks</button><button data-t="miss">Next inputs</button><button data-t="ins">Inspector</button></div>
   <div class="pane" id="pane"></div>
 </aside>
+<div class="grip" id="lgrip" title="Drag to resize · double-click to reset"></div>
+<div class="grip" id="rgrip" title="Drag to resize · double-click to reset"></div>
 </main>
-<script>window.DATA_DIR = "data/";</script>
-<script src="data/project-data.js"></script>
-<script type="module" src="app.js"></script>
+<!-- APP_V: bump on every deploy (also in the engine.js import at the top of app.js) so browsers fetch the new files -->
+<script>window.DATA_DIR = "data/"; window.APP_V = "20261013b";</script>
+<script src="data/project-data.js?v=20261013b"></script>
+<script type="module" src="app.js?v=20261013b"></script>
 </body>
 </html>
