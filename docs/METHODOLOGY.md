@@ -41,6 +41,21 @@ Occupant loads follow NYC BC 2022 Table 1004.1.3 (egress basis, conservative for
 - Sprinkler spacing 15 ft (light hazard, 225 ft², hydraulically calculated) / 11 ft (ordinary hazard, 121 ft² ≤ 130 ft² max, NFPA 13); heads only where the slab exists.
 - One 6 in combined standpipe per modelled stair (NYC Appendix Q, > 150 ft); fire pump flow 500 gpm + 250 gpm per additional standpipe (max 1000, NFPA 14 §7.10), 65 psi at the roof manifold (NYC BC Appendix Q modification of NFPA 14 §7.8.1).
 
+## Life safety (ls.html, lifesafety.js)
+Recomputed from the model data whenever the page loads or an assumption changes; no floor, stair, core or elevator is hard-coded.
+- Stairs: `01_STAIRS` clusters inside `CORES` (tools/build_data.py). A stair serves a floor when it spans that level (bottom ≤ floor + 1 m ≤ top). Stairs sharing a wall count as one exit (§1007.1.1).
+- Elevators and lobbies: the core model layers `02_PASSENGER_ELEVATORS`, `03_FREIGHT_ELEVATOR`, `04_LOBBY_AREAS` are split into connected pieces and merged into vertical columns in the browser (`clusterDetail`). A small lobby touching a stair is its vestibule; a lobby touching cars is the elevator lobby. A car with an enclosed lobby that reaches the top occupied floor is an FSE candidate (§403.6.1, §3007.1).
+- Exits required per floor: Table 1006.3.1 (1–500: 2, 501–1,000: 3, > 1,000: 4).
+- Stair capacity: clear width (assumption, default 47.2 in = 1.2 m) ÷ 0.3 in/occupant, each storey on its own (§1005.3.1; no sprinkler reduction in NYC). Handrails do not reduce the width (§1005.7.2 → §1014.8).
+- Separation: the farthest stair pair must be ≥ ⅓ of the floor's maximum overall diagonal (§1007.1.1 Exception 2, sprinklered). Edge-to-edge between enclosures (conservative) and centre-to-centre (passes only if doors are placed far apart).
+- Egress routes run on the floor plate only: each slab is rasterised to a 0.2 m grid and paths are shortest walking routes on it (8-connected, no corner cutting, then string-pulled). No slab means no floor, so no passage. Core-model walls (`00_WALLS`, restroom `WALL`, `PARTITION`) are cut at floor + 1.0 m and block the route, so paths go through openings and turn at wall ends. Stair landings, vestibules and lobbies count as floor; elevator hoistways and MEP shafts do not. A stair is an exit on a floor only if such a route reaches its door. Programme rooms have no walls or doors in the model yet, so routes cross them until they are modelled.
+- Routes start inside each programme space, at its most remote point (the footprint cell, on the floor plate, farthest by walking distance from any exit). Path of travel: from there to the nearest reachable stair door. Limits, sprinklered: Group A 150 ft primary / 250 ft secondary (§1029.7, Table 1029.7), M 200 ft and B 300 ft (Table 1017.2), 200 ft within an atrium (§404.9.3); > 80 % is flagged.
+- Common path of egress travel (§1006.2.1, Table 1006.2.1; A and M 75 ft, B 100 ft sprinklered, column reading to verify): the part of that route shared with the route to a second, different exit: the straightened route is followed until it moves more than 0.5 m away from the second route, and the split point lies on the route, so common path and the rest of the path of travel are one line; with one reachable exit the whole route is common. Floor area with no route to any stair and stair doors that open onto no floor are reported.
+- Smokeproof enclosures above 75 ft (§403.5.4): each stair needs a vestibule over its full height in the model; ventilation per §909.20 is not checked.
+- Stairway to roof (§1011.12) and the roof manifold (Appendix Q, NFPA 14 §7.3.2.1); basement exits; fire command center (§403.4.6) as a placeholder at the grade lobby.
+- Level of exit discharge (ground floor): exits to grade are not modelled and the floor is reported as info.
+- Not checkable without doors and walls: common path (§1006.2.1), dead ends (§1020.4), corridor ratings.
+
 ## Shafts
 - Risers are laid out in rows along the modelled shaft; a 10% allowance is added for access and fire-stopping.
 - If risers do not fit, the shaft grows (southward) and the check reports the new outline to update in Rhino.

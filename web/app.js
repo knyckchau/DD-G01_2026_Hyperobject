@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { generate, DEFAULTS, CATS, MISSING, IN, M2FT2 } from './engine.js?v=20261013b'; // keep in step with APP_V in index.html
+import { generate, DEFAULTS, CATS, MISSING, IN, M2FT2 } from './engine.js?v=20261013d'; // keep in step with APP_V in index.html
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -25,7 +25,28 @@ const COL = {
 };
 const LEGEND = [['Supply air', 'Supply'], ['Return air', 'Return'], ['Outdoor air', 'Outdoor air'], ['Exhaust air', 'Exhaust'], ['Chilled water', 'CHW'], ['Heating hot water', 'HHW'],
   ['Domestic cold water', 'DCW'], ['Domestic hot water', 'DHW'], ['Sanitary', 'Sanitary'], ['Vent', 'Vent'], ['Storm', 'Storm'], ['Cable tray', 'Tray / busway'], ['Emergency feeder', 'Emergency'], ['Sprinkler main', 'Sprinkler'], ['Standpipe', 'Standpipe'], ['Projector', 'Projector / AV']];
-$('#legend').innerHTML = LEGEND.map(([k, l]) => `<span><i class="sw" style="background:${COL[k]}"></i>${l}</span>`).join('');
+// legend lives in the layer list: each system checkbox gets its colour key underneath (collapsible)
+{
+  // each row switches one kind of run; grouped kinds share a row (the key of the first one sets the colour)
+  const SYSLEG = {
+    HVAC: [['Supply air', 'Supply'], ['Return air', 'Return'], ['Outdoor air', 'Outdoor air'], ['Exhaust air', 'Exhaust'], ['Chilled water', 'CHW'], ['Heating hot water', 'HHW'], ['Diffuser', 'Diffusers']],
+    Plumbing: [['Domestic cold water', 'DCW'], ['Domestic hot water', 'DHW'], ['Sanitary', 'Sanitary'], ['Vent', 'Vent'], ['Storm', 'Storm']],
+    Electrical: [['Cable tray|Busway riser', 'Tray / busway'], ['Emergency feeder', 'Emergency']],
+    Fire: [['Sprinkler main|Sprinkler branch', 'Sprinkler pipe'], ['Sprinkler head', 'Sprinkler heads'], ['Standpipe', 'Standpipe']],
+    AV: [['Projector|AV rack', 'Projector / AV']],
+  };
+  for (const [sys, items] of Object.entries(SYSLEG)) {
+    const lab = document.querySelector(`[data-sys="${sys}"]`)?.closest('label'); if (!lab) continue;
+    lab.querySelector(':scope > .sw')?.remove();   // a system has several colours: its key is the list underneath, not one swatch
+    if (items.length === 1) { const k = items[0][0].split('|')[0]; lab.querySelector('input').insertAdjacentHTML('afterend', `<span class="sw" style="background:${COL[k]}"></span>`); continue; }   // one kind: a plain row, no sub-list
+    const node = document.createElement('div'); node.className = 'tnode';
+    node.innerHTML = `<div class="trow"><span class="caret open">▶</span></div><div class="tkids">${items.map(([k, l]) => `<label class="chk"><input type="checkbox" data-sub="${k}" checked><span class="sw" style="background:${COL[k.split('|')[0]]}"></span>${l}</label>`).join('')}</div>`;
+    lab.replaceWith(node); node.querySelector('.trow').appendChild(lab); lab.style.flex = '1';
+  }
+  // the two stand-alone rows now live under their systems
+  document.querySelectorAll('aside > .sec > label > [data-sub="Diffuser"], aside > .sec > label > [data-sub="Sprinkler head"]').forEach(c => c.closest('label').remove());
+  $('#legend').style.display = 'none';
+}
 
 // ---------- three setup ----------
 const view = $('#view');
@@ -121,33 +142,18 @@ document.addEventListener('click', e => { const c = e.target.closest('.caret'); 
 { const cats = [...new Set(P.volumes.map(v => v.cat))];
   $('#treeProgram').innerHTML = treeHTML({ label: 'Program volumes', attr: 'data-layer="program"', checked: false,
     kids: cats.map(c => ({ label: C[c].label, attr: `data-vcat="${c}"`, checked: true, color: C[c].color, count: P.volumes.filter(v => v.cat === c).length })) })
-    + '<div class="row" style="margin-left:34px"><label>Opacity</label><input type="range" id="volOp" min="0.02" max="0.8" step="0.01" value="0.07" style="width:100px"></div>'; }
+    + '<div class="row" style="margin-left:34px"><label>Opacity</label><input type="range" id="volOp" min="0.05" max="0.3" step="0.01" value="0.07" style="width:100px"></div>'; }
 document.addEventListener('input', e => { if (e.target.id === 'volOp') { volOp = +e.target.value; volObjs.forEach(o => { if (o !== selVol) o.material.opacity = volOp; }); } });
-const STRCOL = n => /RC|concrete|slab-on-grade|RAMP|pre-cast/i.test(n) ? '#b5aea2' : /TRUSS|BRACING/i.test(n) ? '#d9480f' : /PILLAR/i.test(n) ? '#5c6f82' : '#8a9bb0';
-{ const SL = P.structureLayers || [], grps = [...new Set(SL.map(l => l[0]))];
-  $('#treeStructure').innerHTML = SL.length ? treeHTML({ label: 'Structure <small style="color:var(--mute)">(old model, WIP)</small>', attr: 'data-layer="structure"', checked: false,
-    kids: grps.map(g => ({ label: g, attr: `data-sgrp="${g}"`, checked: true, kids: SL.filter(l => l[0] === g).map(l => ({ label: l[1], attr: `data-slayer="${g}|${l[1]}"`, checked: true, color: STRCOL(l[1]) })) })) })
-    + '<div class="row" style="margin-left:34px"><label>Opacity</label><input type="range" id="strOp" min="0.05" max="1" step="0.05" value="0.6" style="width:100px"></div>' : ''; }
-const strG = new THREE.Group(); root.add(strG); let strState = 0, strOp = 0.6;
-function loadStructure() {
-  strState = 1; toast('Loading structure…');
-  const sc = document.createElement('script'); sc.src = (window.DATA_DIR || '') + 'structure-data.js?v=' + (window.APP_V || '');
-  sc.onerror = () => { strState = 0; toast('structure-data.js not found'); };
-  sc.onload = () => {
-    const D = window.STRUCTURE;
-    const b64 = (s, T) => { const bin = atob(s), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new T(u.buffer); };
-    for (const l of D.layers) {
-      const q = b64(l.v, Int16Array), pos = new Float32Array(q.length);
-      for (let i = 0; i < q.length; i += 3) { pos[i] = q[i] / 100 + D.origin[0]; pos[i + 1] = q[i + 1] / 100 + D.origin[1]; pos[i + 2] = q[i + 2] / 100 + D.origin[2]; }
-      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(new THREE.BufferAttribute(b64(l.t, Uint32Array), 1)); g.computeVertexNormals();
-      const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: STRCOL(l.name), roughness: 0.7, metalness: 0.1, transparent: true, opacity: strOp, depthWrite: strOp > 0.95, side: THREE.DoubleSide, clippingPlanes: [clipLo, clipHi] }));
-      m.userData = { grp: l.group, name: l.name }; strG.add(m);
-    }
-    strState = 2; toast(`Structure loaded · ${D.source}`); applyVis();
-  };
-  document.head.appendChild(sc);
+// layer list: big groups with caret + heading checkbox, rows aligned as caret | checkbox | legend | name
+{
+  const sec = $('#treeProgram').closest('.sec'), L = s => sec.querySelector(s)?.closest('label') || null;
+  sec.querySelectorAll(':scope > div[style*="height:6px"]').forEach(d => d.remove());
+  layerGroup('Model & context', [L('[data-layer=shell]'), L('[data-layer=detail]'), $('#wallOp').closest('.row'), L('[data-layer=slabs]'), $('#treeProgram'), L('[data-layer=ghost]')]);
+  layerGroup('Annotation', [L('[data-layer=labels]'), L('[data-layer=tags]'), L('[data-layer=outline]')]);
+  alignLayerRows(sec);
+  $('#bLayClearM').onclick = () => { sec.querySelectorAll('input[type=checkbox]').forEach(c => { if (!c.disabled && !c.dataset.hgrp) c.checked = false; }); applyVis(); syncLayerGroups(); };
+  document.addEventListener('change', () => requestAnimationFrame(syncLayerGroups));
 }
-document.addEventListener('input', e => { if (e.target.id === 'strOp') { strOp = +e.target.value; strG.children.forEach(m => { m.material.opacity = strOp; m.material.depthWrite = strOp > 0.95; }); } });
 function textSprite(txt) {
   const c = document.createElement('canvas'); c.width = 256; c.height = 64; const x = c.getContext('2d');
   x.font = '500 34px IBM Plex Mono, monospace'; x.fillStyle = '#3b3f45'; x.fillText(txt, 6, 44);
@@ -216,16 +222,12 @@ function buildMEP() {
 
 function applyVis() {
   const sys = Object.fromEntries($$('[data-sys]').map(c => [c.dataset.sys, c.checked]));
-  const sub = Object.fromEntries($$('[data-sub]').map(c => [c.dataset.sub, c.checked]));
+  const sub = Object.fromEntries($$('[data-sub]').flatMap(c => c.dataset.sub.split('|').map(k => [k, c.checked])));
   const lay = Object.fromEntries($$('[data-layer]').map(c => [c.dataset.layer, c.checked]));
   const ctxFloor = $('#ctxFloor').checked;
   shellG.visible = lay.shell && explode === 0 && (floorSel < 0 || ctxFloor);
   ctxG.visible = lay.ghost && explode === 0;
   detG.visible = lay.detail && explode === 0;
-  strG.visible = !!lay.structure && explode === 0;
-  if (lay.structure && strState === 0) loadStructure();
-  { const sg = Object.fromEntries($$('[data-sgrp]').map(c => [c.dataset.sgrp, c.checked])), sl = Object.fromEntries($$('[data-slayer]').map(c => [c.dataset.slayer, c.checked]));
-    strG.children.forEach(m => m.visible = sg[m.userData.grp] !== false && sl[m.userData.grp + '|' + m.userData.name] !== false); }
   if (floorSel === -2) { clipLo.constant = -((P.basementZ ?? 0) - 1); clipHi.constant = P.levels[0].z + 0.5; }
   else if (floorSel >= 0 && !ctxFloor) { const z0 = floorSel === 0 ? (P.basementZ ?? 0) - 1 : P.levels[floorSel].z - 0.05, z1 = (P.levels[floorSel + 1]?.z ?? P.levels[floorSel].z + 8) - 0.05; clipLo.constant = -z0; clipHi.constant = z1; }
   else { clipLo.constant = 1e4; clipHi.constant = 1e4; }
@@ -347,7 +349,7 @@ document.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.a) { A[t.dataset.a] = t.type === 'number' ? parseFloat(t.value) : t.value; SS('mep.A', A); queueRegen(); }
   else if (t.dataset.c) { const [c, k] = t.dataset.c.split('.'); C[c][k] = t.tagName === 'SELECT' ? t.value : parseFloat(t.value); SS('mep.C', Object.fromEntries(Object.entries(C).map(([c, v]) => [c, { olf: v.olf, Rp: v.Rp, Ra: v.Ra, lpd: v.lpd, epd: v.epd, haz: v.haz }]))); queueRegen(); }
-  else if (t.dataset.sys || t.dataset.layer || t.dataset.sub || t.dataset.vcat || t.dataset.sgrp || t.dataset.slayer || t.id === 'ctxFloor') applyVis();
+  else if (t.dataset.sys || t.dataset.layer || t.dataset.sub || t.dataset.vcat || t.id === 'ctxFloor') applyVis();
 });
 function queueRegen() { clearTimeout(regenT); regenT = setTimeout(regen, 150); }
 $('#bReset').onclick = () => { A = { ...DEFAULTS }; C = JSON.parse(JSON.stringify(CATS)); SS('mep.A', null); SS('mep.C', null); buildInputs(); regen(); };
@@ -559,6 +561,7 @@ function status() {
 function regen() {
   const sel = selected?.id; selected = null;
   model = generate(P, A, C);
+  model.cats = C;
   buildMEP(); renderPane();
   if (sel) { /* ids regenerate; keep selection cleared */ }
 }

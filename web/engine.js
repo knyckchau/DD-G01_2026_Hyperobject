@@ -54,6 +54,14 @@ export const DEFAULTS = {
   // electrical
   voltage: 480, demand: 0.8, spare: 0.25, pf: 0.9,
   elevators: 0, elevatorHp: 40, freightHp: 60, // 0 = use count from the core model
+  // life safety (lifesafety.js)
+  stairClearIn: 47.2,    // in, clear width of each exit stair flight (1.2 m) — not readable from the model
+  stairFactor: 0.3,      // in per occupant, stairways, NYC BC §1005.3.1 (no sprinkler reduction in NYC)
+  sepFraction: 1 / 3,    // exit separation ≥ 1/3 of max overall diagonal, sprinklered, NYC BC §1007.1.1
+  // exit access travel, sprinklered (ft): Group A per NYC BC §1029.7 / Table 1029.7 (primary 150, secondary 250);
+  // B 300 and M (also E, F-1, R, S-1) 200 per Table 1017.2; portion within an atrium 200 per §404.9.3
+  travelA1: 150, travelA2: 250, travelB: 300, travelM: 200, travelAtrium: 200,
+  cpetA: 75, cpetB: 100, // common path of egress travel, sprinklered (Table 1006.2.1)
   // fire
   genLocation: 'roof', // 'roof' | 'basement'
   standpipeFlow: 0, topOutletPsi: 65, // 0 = auto (NFPA 14 §7.10: 500 gpm + 250 per extra standpipe, max 1000); 65 psi per NYC BC Appendix Q mod. to NFPA 14 §7.8.1
