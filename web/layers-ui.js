@@ -62,3 +62,11 @@
     window.wireLayerGroup(node);
   };
 })();
+
+// OUTPUT menu in the header (all pages): click to open, click an item or anywhere else to close
+document.addEventListener('click', e => {
+  const dd = document.getElementById('outMenu'); if (!dd) return;
+  if (e.target.closest('#bOut')) { dd.classList.toggle('open'); return; }
+  dd.classList.remove('open');
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.getElementById('outMenu')?.classList.remove('open'); });

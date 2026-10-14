@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CATS } from './engine.js?v=20261013d'; // keep in step with APP_V in st.html
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261013d';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -40,7 +41,7 @@ function textSprite(txt) {
   const c = document.createElement('canvas'), x = c.getContext('2d'), F = '600 30px IBM Plex Mono, monospace'; x.font = F; const w = Math.ceil(x.measureText(txt).width) + 22;
   c.width = w; c.height = 56; x.font = F; x.fillStyle = 'rgba(255,255,255,0.93)'; x.fillRect(0, 6, w, 44); x.fillStyle = '#868e96'; x.fillRect(0, 6, 6, 44); x.fillStyle = '#1d1f22'; x.fillText(txt, 12, 39);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true })); s.userData.px = 19; s.userData.asp = w / 56; s.center.set(1, 0); s.renderOrder = 10; return s;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true })); s.userData.text = txt; s.userData.px = 19; s.userData.asp = w / 56; s.center.set(1, 0); s.renderOrder = 10; return s;
 }
 
 // context: slabs, floor labels, programme
@@ -57,7 +58,7 @@ for (const vm of P.volMeshes || []) {
   const col = CATS[vol.cat]?.color || '#999', g = meshFrom(vm.v, vm.t);
   const me = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: volOp, depthWrite: false, side: THREE.DoubleSide }));
   me.add(new THREE.LineSegments(new THREE.EdgesGeometry(g, 25), new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.6 })));
-  put('occ', me, vol.floor); volMeshes.push(me);
+  put('occ', me, vol.floor); me.userData.cat = vol.cat; volMeshes.push(me);
 }
 
 // structure model
@@ -220,14 +221,35 @@ function status() { $('#status').innerHTML = S?.rows ? `<b style="color:var(--in
 const toast = m => { const t = $('#toast'); t.textContent = m; t.style.opacity = 1; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.opacity = 0, 2600); };
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
 function download(name, data, type) { const b = data instanceof Blob ? data : new Blob([data], { type }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
-$('#bPng').onclick = () => {
-  const w = 3840, h = 2160, vw = view.clientWidth, vh = view.clientHeight, pr = renderer.getPixelRatio();
+function exportPNG(w, h) {
+  const max = renderer.capabilities.maxTextureSize; if (w > max) { h = Math.round(h * max / w); w = max; }
+  const vw = view.clientWidth, vh = view.clientHeight, pr = renderer.getPixelRatio();
   renderer.setPixelRatio(1); renderer.setSize(w, h, false);
   if (camera === pcam) { pcam.aspect = w / h; pcam.updateProjectionMatrix(); } else { const hh = (ocam.top - ocam.bottom) / 2; ocam.left = -hh * w / h; ocam.right = hh * w / h; ocam.updateProjectionMatrix(); }
   scaleTags(vh); renderer.render(scene, camera);
-  renderer.domElement.toBlob(b => download(`2GBX_Structure_${floorSel === -1 ? 'ALL' : flName(floorSel)}_${stamp()}.png`, b), 'image/png');
+  renderer.domElement.toBlob(b => download(`2GBX_Structure_${selName()}_${w}x${h}_${stamp()}.png`, b), 'image/png');
   renderer.setPixelRatio(pr); renderer.setSize(vw, vh, false); renderer.domElement.style.width = vw + 'px'; renderer.domElement.style.height = vh + 'px'; resize();
+  toast(`PNG ${w}×${h} exported`);
+}
+const selName = () => floorSel === -1 ? 'ALL' : flName(floorSel);
+$('#bPng').onclick = () => exportPNG(3840, 2160);
+$('#bPng8').onclick = () => exportPNG(7680, 4320);
+// Rhino / OBJ: what is visible now; structure keeps its FBX group and layer, context goes under Context
+const CTX = { slabs: 'Slabs 261004', labels: 'Floor labels' };
+const visItems = () => collect([root], {
+  layerOf: own => { const u = own.userData; return u.layer === 'str' ? `Structure::${u.grp}::${u.name}` : u.layer === 'occ' ? `Context::Programme volumes 261004::${CATS[u.cat]?.label || u.cat}` : CTX[u.layer] ? 'Context::' + CTX[u.layer] : null; },
+  zRange: floorSel >= 0 ? [L[floorSel].z - 0.05, (L[floorSel + 1]?.z ?? L[floorSel].z + 9) - 0.05] : null,
+});
+$('#b3dm').onclick = async () => {
+  toast('Loading rhino3dm…');
+  try { const { bytes, n } = await to3dm(visItems()); download(`2GBX_Structure_${selName()}_${stamp()}.3dm`, new Blob([bytes], { type: 'application/octet-stream' })); toast(`Rhino .3dm exported · ${n} objects (metres)`); }
+  catch (err) { console.error(err); toast('rhino3dm unavailable, exporting OBJ instead'); $('#bObj').click(); }
 };
+$('#bObj').onclick = () => {
+  const base = `2GBX_Structure_${selName()}`, { obj, mtl } = toOBJ(visItems(), base, 'DD-G01 Hyperobject · Structure');
+  download(base + '.obj', obj, 'text/plain'); setTimeout(() => download(base + '.mtl', mtl, 'text/plain'), 300); toast('OBJ + MTL exported (metres, Z up)');
+};
+$('#bJson').onclick = () => { if (!S?.rows) return; download(`2GBX_Structure_${stamp()}.json`, JSON.stringify({ project: P.name, units: 'm', source: S.source, groups: SGRP, layers: S.rows.map(r => ({ group: r.grp, layer: r.name, triangles: r.nt, vertices: r.nv, colour: r.col, bbox_m: { min: r.b.slice(0, 3), max: r.b.slice(3) } })) }, null, 1), 'application/json'); };
 $('#bCsv').onclick = () => { if (!S?.rows) return; download(`2GBX_Structure_layers_${stamp()}.csv`, [['group', 'layer', 'triangles', 'vertices', 'zmin_m', 'zmax_m', 'xsize_m', 'ysize_m'], ...S.rows.map(r => [r.grp, r.name, r.nt, r.nv, r.b[2].toFixed(2), r.b[5].toFixed(2), (r.b[3] - r.b[0]).toFixed(2), (r.b[4] - r.b[1]).toFixed(2)])].map(r => r.map(v => `"${v}"`).join(',')).join('\n'), 'text/csv'); };
 
 // ---------- go ----------

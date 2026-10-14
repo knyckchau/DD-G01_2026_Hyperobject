@@ -95,3 +95,11 @@ details summary{cursor:pointer;color:var(--mute);font-size:12px;margin:6px 0}
 /* the app is a light design: keep native controls (checkboxes, inputs, selects) light even when the browser or viewer is in dark mode */
 :root,:root[data-theme]{color-scheme:light !important}
 input,select,button,textarea{color-scheme:light}
+/* OUTPUT menu in the header (all pages) */
+.dd{position:relative}
+.dd .ddm{display:none;position:absolute;right:0;top:calc(100% + 6px);width:max-content;min-width:100%;flex-direction:column;gap:2px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.12);z-index:60}
+.dd.open .ddm{display:flex}
+.dd .ddm .btn{display:block;border:0;background:none;text-align:right;width:100%;text-decoration:none;color:var(--ink);box-sizing:border-box}
+.dd .ddm .btn:hover{background:#f0f0ec}
+/* status pills in table cells share one width so the names after them line up */
+td .pill{display:inline-block;min-width:40px;text-align:center;box-sizing:border-box}

@@ -9,6 +9,7 @@ import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261013d'; // keep in step with APP_V in ls.html
 import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261013d';
 import { LS_Q } from './ls-codes.js?v=20261013d';
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261013d';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -156,7 +157,7 @@ function dots(pts, color, step = 0.55, r = 0.11) {
     carry = ((carry - L) % step + step) % step;
   }
   const m = new THREE.InstancedMesh(new THREE.SphereGeometry(r, 8, 6), new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true }), P.length);
-  const M = new THREE.Matrix4(); P.forEach((p, i) => m.setMatrixAt(i, M.makeTranslation(p[0], p[1], p[2]))); m.renderOrder = 8; return m;
+  const M = new THREE.Matrix4(); P.forEach((p, i) => m.setMatrixAt(i, M.makeTranslation(p[0], p[1], p[2]))); m.renderOrder = 8; m.userData.poly = pts; return m;
 }
 function arrows(pts, color, step = 2.2, size = 0.55) {   // thin line with chevrons pointing to the exit
   const g = new THREE.Group(); g.add(line(pts, color, 1.6));
@@ -179,7 +180,7 @@ function tag(txt, color = '#868e96', size = 1) {
   x.font = F; const w = Math.ceil(x.measureText(txt).width) + 22; c.width = w; c.height = 56; x.font = F;
   x.fillStyle = 'rgba(255,255,255,0.93)'; x.fillRect(0, 6, w, 44); x.fillStyle = color; x.fillRect(0, 6, 6, 44); x.fillStyle = '#1d1f22'; x.fillText(txt, 12, 39);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true })); s.userData.px = Math.max(12, 15 * size); s.userData.asp = w / 56; s.scale.set(s.userData.asp, 1, 1); s.center.set(0, 0); s.renderOrder = 10; return s;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true })); s.userData.text = txt; s.userData.px = Math.max(12, 15 * size); s.userData.asp = w / 56; s.scale.set(s.userData.asp, 1, 1); s.center.set(0, 0); s.renderOrder = 10; return s;
 }
 const RAMP = [[0, '#d3f9d8'], [0.5, '#ffe066'], [0.8, '#f76707'], [1, '#c92a2a'], [1.6, '#862e9c']].map(([t, c]) => [t, new THREE.Color(c)]);
 const ramp = t => { for (let n = 1; n < RAMP.length; n++) if (t <= RAMP[n][0]) { const [a, ca] = RAMP[n - 1], [b, cb] = RAMP[n]; return ca.clone().lerp(cb, (t - a) / (b - a)); } return RAMP[RAMP.length - 1][1].clone(); };
@@ -596,13 +597,33 @@ function regen() {
 const toast = m => { const t = $('#toast'); t.textContent = m; t.style.opacity = 1; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.opacity = 0, 2600); };
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
 function download(name, data, type) { const b = data instanceof Blob ? data : new Blob([data], { type }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
-$('#bPng').onclick = () => {
-  const w = 3840, h = 2160, vw = view.clientWidth, vh = view.clientHeight, pr = renderer.getPixelRatio();
+function exportPNG(w, h) {
+  const max = renderer.capabilities.maxTextureSize; if (w > max) { h = Math.round(h * max / w); w = max; }
+  const vw = view.clientWidth, vh = view.clientHeight, pr = renderer.getPixelRatio();
   renderer.setPixelRatio(1); renderer.setSize(w, h, false); lineMats.forEach(m => m.resolution.set(w, h));
   if (camera === pcam) { pcam.aspect = w / h; pcam.updateProjectionMatrix(); } else { const hh = (ocam.top - ocam.bottom) / 2; ocam.left = -hh * w / h; ocam.right = hh * w / h; ocam.updateProjectionMatrix(); }
   scaleTags(vh); renderer.render(scene, camera);
-  renderer.domElement.toBlob(b => download(`2GBX_LifeSafety_${floorSel === -1 ? 'ALL' : flName(floorSel)}_${stamp()}.png`, b), 'image/png');
+  renderer.domElement.toBlob(b => download(`2GBX_LifeSafety_${selName()}_${w}x${h}_${stamp()}.png`, b), 'image/png');
   renderer.setPixelRatio(pr); renderer.setSize(vw, vh, false); renderer.domElement.style.width = vw + 'px'; renderer.domElement.style.height = vh + 'px'; resize();
+  toast(`PNG ${w}×${h} exported`);
+}
+const selName = () => floorSel === -1 ? 'ALL' : floorSel === -2 ? 'B1' : flName(floorSel);
+$('#bPng').onclick = () => exportPNG(3840, 2160);
+$('#bPng8').onclick = () => exportPNG(7680, 4320);
+// Rhino / OBJ: what is visible now, one layer per layer-list entry (LS::group::layer); tags become text dots in Rhino
+const LPATH = Object.fromEntries(LAYERS.flatMap(([g, ls]) => ls.map(([k, l]) => [k, `LS::${g.replace(/&/g, 'and')}::${l.replace(/\s*\(.*\)/, '').replace(/ \+ /g, ' and ')}`])));
+const visItems = () => collect([root], {
+  layerOf: own => { const k = own.userData.layer; return LPATH[k] || 'LS::Other::' + k; },
+  zRange: floorSel >= 0 ? [L[floorSel].z - 0.05, (L[floorSel + 1]?.z ?? L[floorSel].z + 9) - 0.05] : floorSel === -2 ? [(P.basementZ ?? 0) - 1, L[0].z + 0.5] : null,
+});
+$('#b3dm').onclick = async () => {
+  toast('Loading rhino3dm…');
+  try { const { bytes, n } = await to3dm(visItems()); download(`2GBX_LifeSafety_${selName()}_${stamp()}.3dm`, new Blob([bytes], { type: 'application/octet-stream' })); toast(`Rhino .3dm exported · ${n} objects (metres)`); }
+  catch (err) { console.error(err); toast('rhino3dm unavailable, exporting OBJ instead'); $('#bObj').click(); }
+};
+$('#bObj').onclick = () => {
+  const base = `2GBX_LifeSafety_${selName()}`, { obj, mtl } = toOBJ(visItems(), base, 'DD-G01 Hyperobject · Life safety');
+  download(base + '.obj', obj, 'text/plain'); setTimeout(() => download(base + '.mtl', mtl, 'text/plain'), 300); toast('OBJ + MTL exported (metres, Z up)');
 };
 $('#bCsv').onclick = () => {
   const H = ['floor', 'elev_m', 'height_ft', 'occupants', 'groups', 'exits_required', 'exits_provided', 'stairs', 'stair_capacity', 'diagonal_ft', 'sep_required_ft', 'sep_edge_ft', 'sep_centre_ft', 'travel_ft', 'travel_limit_ft', 'second_exit_ft', 'second_limit_ft', 'status'];
