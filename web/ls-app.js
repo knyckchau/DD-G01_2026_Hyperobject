@@ -6,10 +6,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
-import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261013d'; // keep in step with APP_V in ls.html
-import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261013d';
-import { LS_Q } from './ls-codes.js?v=20261013d';
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261013d';
+import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261013e'; // keep in step with APP_V in ls.html
+import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261013e';
+import { LS_Q } from './ls-codes.js?v=20261013e';
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261013e';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
