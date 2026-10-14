@@ -2,8 +2,8 @@
 // the energy checks will be added here as the page is defined.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { CATS } from './engine.js?v=20261013e'; // keep in step with APP_V in st.html
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261013e';
+import { CATS } from './engine.js?v=20261013g'; // keep in step with APP_V in st.html
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261013g';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -67,7 +67,7 @@ const row = (attr, label, on, swatch = '') => `<label class="chk"><input type="c
 $('#layers').innerHTML = `<button class="btn" id="bLayClear" style="width:100%;margin-bottom:8px">Clear selection</button>`
   + `<div class="tnode lgh">${groupHead('Context')}<div class="tkids">`
   + row('data-layer="slabs"', 'Slabs (261004)', 1, sw('#d9dbd6'))
-  + row('data-layer="labels"', 'Floor labels', 1)
+  + row('data-layer="labels"', 'Floor labels', 1, '<i style="display:inline-block;width:18px;height:10px;background:#fff;border:1px solid #c9ccd1;border-left:3px solid #868e96;box-sizing:border-box;flex:none"></i>')
   + `<div class="tnode"><div class="trow"><span class="caret">▶</span>${row('data-layer="occ"', 'Programme volumes (261004)', 1)}</div><div class="tkids" hidden>${cats.map(c => row(`data-vcat="${c}"`, CATS[c]?.label || c, 1, sw(CATS[c]?.color || '#999'))).join('')}</div></div>`
   + `<div class="row" style="margin-left:34px"><label>Opacity</label><input type="range" id="volOp" min="0.05" max="0.3" step="0.01" value="${volOp}" style="width:100px"></div>`
   + `</div></div>`;
@@ -219,4 +219,13 @@ $('#bJson').onclick = () => download(`2GBX_Energy_${stamp()}.json`, JSON.stringi
 
 // ---------- go ----------
 resize(); setProj(true); setView('iso'); applyVis(); renderPane();
-renderer.setAnimationLoop(() => { controls.update(); scaleTags(); renderer.render(scene, camera); });
+// floor labels sit at the corner of the building that is left-most in the current view
+const _lc = new THREE.Vector3();
+function placeLabels(list) {
+  let best = null, bx = Infinity;
+  for (const [x, y] of [[bmin.x, bmin.y], [bmax.x, bmin.y], [bmax.x, bmax.y], [bmin.x, bmax.y]]) { _lc.set(x, y, center.z).project(camera); if (_lc.x < bx) { bx = _lc.x; best = [x, y]; } }
+  const px = best[0] + Math.sign(best[0] - center.x) * 2, py = best[1] + Math.sign(best[1] - center.y) * 2;
+  for (const s of list) { s.position.x = px; s.position.y = py; }
+}
+const labelSprites = root.children.filter(o => o.userData.layer === 'labels');
+renderer.setAnimationLoop(() => { controls.update(); placeLabels(labelSprites); scaleTags(); renderer.render(scene, camera); });

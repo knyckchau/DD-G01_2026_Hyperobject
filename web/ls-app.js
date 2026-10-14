@@ -6,10 +6,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
-import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261013e'; // keep in step with APP_V in ls.html
-import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261013e';
-import { LS_Q } from './ls-codes.js?v=20261013e';
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261013e';
+import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261013g'; // keep in step with APP_V in ls.html
+import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261013g';
+import { LS_Q } from './ls-codes.js?v=20261013g';
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261013g';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -422,6 +422,10 @@ function setView(v) {
   controls.target.copy(tgt); camera.position.copy(tgt).add(d.multiplyScalar(radius * 3.2));
   if (camera === ocam) { ocam.zoom = zoom; ocam.updateProjectionMatrix(); }
   controls.update();
+  if (floorSel === -1 && v !== 'top') {   // the floor labels here are long: shift the building right so they stay in view
+    camera.updateMatrixWorld(); const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0), k = -radius * 0.22;
+    controls.target.addScaledVector(right, k); camera.position.addScaledVector(right, k); controls.update();
+  }
 }
 function setProj(o) { ortho = o; const p = camera.position.clone(), t = controls.target.clone(); camera = o ? ocam : pcam; camera.position.copy(p); controls.object = camera; controls.target.copy(t); controls.update(); $('#bProj').textContent = o ? 'Ortho' : 'Persp'; $('#bProj').classList.toggle('on', o); }
 $('#floorSel').innerHTML = '<option value="-1">All floors</option><option value="-2">B1 · basement</option>' + L.map((l, i) => `<option value="${i}">${flName(i)} · +${l.z.toFixed(1)}</option>`).join('');
@@ -640,4 +644,12 @@ function scaleTags(H = view.clientHeight) {
   const wppO = (ocam.top - ocam.bottom) / ocam.zoom / H, k = 2 * Math.tan(THREE.MathUtils.degToRad(pcam.fov / 2)) / H;
   for (const g of [statG, dynG]) for (const o of g.children) if (o.isSprite && o.visible) { const h = o.userData.px * (camera === ocam ? wppO : o.getWorldPosition(_v).distanceTo(camera.position) * k); o.scale.set(h * o.userData.asp, h, 1); }
 }
-renderer.setAnimationLoop(() => { controls.update(); scaleTags(); renderer.render(scene, camera); });
+// floor labels sit at the corner of the building that is left-most in the current view
+const _lc = new THREE.Vector3();
+function placeLabels(list) {
+  let best = null, bx = Infinity;
+  for (const [x, y] of [[bmin.x, bmin.y], [bmax.x, bmin.y], [bmax.x, bmax.y], [bmin.x, bmax.y]]) { _lc.set(x, y, center.z).project(camera); if (_lc.x < bx) { bx = _lc.x; best = [x, y]; } }
+  const px = best[0] + Math.sign(best[0] - center.x) * 2, py = best[1] + Math.sign(best[1] - center.y) * 2;
+  for (const s of list) { s.position.x = px; s.position.y = py; }
+}
+renderer.setAnimationLoop(() => { controls.update(); placeLabels(dynG.children.filter(o => o.userData.layer === 'labels')); scaleTags(); renderer.render(scene, camera); });

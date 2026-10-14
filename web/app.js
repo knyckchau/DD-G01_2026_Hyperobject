@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { generate, DEFAULTS, CATS, MISSING, IN, M2FT2 } from './engine.js?v=20261013e'; // keep in step with APP_V in index.html
+import { generate, DEFAULTS, CATS, MISSING, IN, M2FT2 } from './engine.js?v=20261013g'; // keep in step with APP_V in index.html
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -154,10 +154,17 @@ document.addEventListener('input', e => { if (e.target.id === 'volOp') { volOp =
   $('#bLayClearM').onclick = () => { sec.querySelectorAll('input[type=checkbox]').forEach(c => { if (!c.disabled && !c.dataset.hgrp) c.checked = false; }); applyVis(); syncLayerGroups(); };
   document.addEventListener('change', () => requestAnimationFrame(syncLayerGroups));
 }
-function textSprite(txt) {
-  const c = document.createElement('canvas'); c.width = 256; c.height = 64; const x = c.getContext('2d');
-  x.font = '500 34px IBM Plex Mono, monospace'; x.fillStyle = '#3b3f45'; x.fillText(txt, 6, 44);
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false, transparent: true })); s.scale.set(8, 2, 1); return s;
+function textSprite(txt) {   // floor label: boxed tag, same as the Structure, Life safety and Energy pages
+  const c = document.createElement('canvas'), x = c.getContext('2d'), F = '600 30px IBM Plex Mono, monospace'; x.font = F; const w = Math.ceil(x.measureText(txt).width) + 22;
+  c.width = w; c.height = 56; x.font = F; x.fillStyle = 'rgba(255,255,255,0.93)'; x.fillRect(0, 6, w, 44); x.fillStyle = '#868e96'; x.fillRect(0, 6, 6, 44); x.fillStyle = '#1d1f22'; x.fillText(txt, 12, 39);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true })); s.userData.px = 19; s.userData.asp = w / 56; s.center.set(1, 0); s.renderOrder = 10; return s;
+}
+// floor labels keep a constant on-screen size whatever the zoom
+const _sv = new THREE.Vector3();
+function scaleTags(H = view.clientHeight) {
+  const wppO = (ocam.top - ocam.bottom) / ocam.zoom / H, k = 2 * Math.tan(THREE.MathUtils.degToRad(pcam.fov / 2)) / H;
+  for (const c of ctx) { const o = c.label; if (!o) continue; const h = o.userData.px * (camera === ocam ? wppO : o.getWorldPosition(_sv).distanceTo(camera.position) * k); o.scale.set(h * o.userData.asp, h, 1); }
 }
 
 // ---------- materials ----------
@@ -216,7 +223,7 @@ function buildMEP() {
     }
     obj.userData.el = el; el.obj = obj; g.add(obj); pickables.push(obj);
   }
-  P.levels.forEach((l, i) => { const s = textSprite(model.floors[i].name + '  +' + l.z.toFixed(1)); s.position.set(bmin.x - 6, bmin.y, l.z + 0.6); ctx[i].label = s; ctx[i].slab.add(s); });
+  P.levels.forEach((l, i) => { const s = textSprite(model.floors[i].name + ' +' + l.z.toFixed(1)); s.position.set(bmin.x - 6, bmin.y, l.z + 0.6); ctx[i].label = s; ctx[i].slab.add(s); });
   applyVis();
 }
 
@@ -578,8 +585,7 @@ function exportPNG(w, h) {
   const asp = w / h;
   if (camera === pcam) { pcam.aspect = asp; pcam.updateProjectionMatrix(); }
   else { const hh = (ocam.top - ocam.bottom) / 2; ocam.left = -hh * asp; ocam.right = hh * asp; ocam.updateProjectionMatrix(); }
-  const ls = ctx.map(c => c.label?.scale.clone());
-  renderer.render(scene, camera);
+  scaleTags(vh); renderer.render(scene, camera);
   renderer.domElement.toBlob(b => download(`2GBX_MEP_${selName()}_${w}x${h}_${stamp()}.png`, b), 'image/png');
   renderer.setPixelRatio(pr); renderer.setSize(vw, vh, false); renderer.domElement.style.width = vw + 'px'; renderer.domElement.style.height = vh + 'px'; resize();
   toast(`PNG ${w}×${h} exported`);
@@ -661,4 +667,12 @@ $('#bJson').onclick = () => {
 
 // ---------- go ----------
 buildInputs(); resize(); regen(); setProj(true); setView('iso'); loadDetail();
-renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+// floor labels sit at the corner of the building that is left-most in the current view
+const _lc = new THREE.Vector3();
+function placeLabels(list) {
+  let best = null, bx = Infinity;
+  for (const [x, y] of [[bmin.x, bmin.y], [bmax.x, bmin.y], [bmax.x, bmax.y], [bmin.x, bmax.y]]) { _lc.set(x, y, center.z).project(camera); if (_lc.x < bx) { bx = _lc.x; best = [x, y]; } }
+  const px = best[0] + Math.sign(best[0] - center.x) * 2, py = best[1] + Math.sign(best[1] - center.y) * 2;
+  for (const s of list) { s.position.x = px; s.position.y = py; }
+}
+renderer.setAnimationLoop(() => { controls.update(); placeLabels(ctx.map(c => c.label).filter(Boolean)); scaleTags(); renderer.render(scene, camera); });

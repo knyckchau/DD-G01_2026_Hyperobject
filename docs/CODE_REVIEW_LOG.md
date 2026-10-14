@@ -465,7 +465,7 @@ Basis: NYC PC Table 403.1 and §403.1.1. Libraries take B counts (footnote n). O
 
 ## 6. App changes and deployment
 
-### Changes this round (APP_V `20261013e`)
+### Changes this round (APP_V `20261013g`)
 
 **MEP page**
 - Formula fixes (section 4).
