@@ -2,8 +2,8 @@
 // the energy checks will be added here as the page is defined.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { CATS } from './engine.js?v=20261013g'; // keep in step with APP_V in st.html
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261013g';
+import { CATS } from './engine.js?v=20261013j'; // keep in step with APP_V in st.html
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261013j';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -123,8 +123,14 @@ function setView(v) {
   }
   controls.target.copy(tgt); camera.position.copy(tgt).add(d.multiplyScalar(radius * 3.2));
   if (camera === ocam) { ocam.zoom = zoom; ocam.updateProjectionMatrix(); } controls.update();
+  markView(v);
 }
-function setProj(o) { ortho = o; const p = camera.position.clone(), t = controls.target.clone(); camera = o ? ocam : pcam; camera.position.copy(p); controls.object = camera; controls.target.copy(t); controls.update(); $('#bProj').textContent = o ? 'Ortho' : 'Persp'; $('#bProj').classList.toggle('on', o); }
+// the active view button stays highlighted until the camera is rotated away from that direction
+let viewDir = null;
+function markView(v) { $$('[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === v)); viewDir = v ? camera.position.clone().sub(controls.target).normalize() : null; }
+controls.addEventListener('change', () => { if (viewDir && camera.position.clone().sub(controls.target).normalize().dot(viewDir) < 0.9995) markView(null); });
+
+function setProj(o) { ortho = o; const p = camera.position.clone(), t = controls.target.clone(); camera = o ? ocam : pcam; camera.position.copy(p); controls.object = camera; controls.target.copy(t); controls.update(); $('#bProj').textContent = o ? 'Ortho' : 'Perspective'; $('#bProj').classList.add('on'); }
 $('#floorSel').innerHTML = '<option value="-1">All floors</option>' + L.map((l, i) => `<option value="${i}">${flName(i)} · +${l.z.toFixed(1)}</option>`).join('');
 $('#floorSel').onchange = e => { floorSel = +e.target.value; applyVis(); setView(floorSel === -1 ? 'iso' : 'top'); };
 $$('[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
@@ -162,10 +168,13 @@ const PLANNED = [
   ['Envelope', 'Wall, roof and glazing performance and window-to-wall ratio against NYCECC. Needs envelope data that the model does not have yet.'],
   ['Solar exposure', 'Incident solar radiation by facade and floor. Needs the final envelope geometry.'],
 ];
+// summary cards: grouped under text headings, the left bar colour is the status
+const STL = { ok: 'OK', warn: 'Check', fail: 'Fails', info: 'Info' };
+const stLegend = () => `<div class="row" style="gap:10px;font-size:11px;color:var(--mute);margin:0 0 8px">Bar colour = status ${Object.entries(STL).map(([k, l]) => `<span style="display:inline-flex;align-items:center;gap:4px;color:var(--ink)"><i style="display:inline-block;width:3px;height:12px;background:var(--${k})"></i>${l}</span>`).join('')}</div>`;
 function renderPane() {
   const pane = $('#pane');
   if (tab === 'sum') {
-    pane.innerHTML = `<div class="kpis"><div class="kpi" style="grid-column:1/-1"><b style="font-size:14px">Work in progress</b><small>The contents of this page are not decided yet. The model is shown as context.</small></div></div>
+    pane.innerHTML = stLegend() + `<h3 style="font-size:12px;margin:10px 0 6px">Status</h3><div class="kpis"><div class="kpi s-info" style="grid-column:1/-1"><b style="font-size:14px">Work in progress</b><small>The contents of this page are not decided yet. The model is shown as context.</small></div></div>
     <h3 style="font-size:12px;margin:6px 0">Candidate contents</h3>
     <table><tr><th>Topic</th><th>Scope</th></tr>${PLANNED.map(([t, d]) => `<tr><td style="vertical-align:top;white-space:nowrap">${t}</td><td style="white-space:normal;text-align:left;line-height:1.4">${d}</td></tr>`).join('')}</table>
     <div class="note">Click a programme volume in the model to inspect it.</div>`;

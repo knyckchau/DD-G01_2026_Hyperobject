@@ -6,14 +6,13 @@
 <title>DD-G01 HYPEROBJECT · Life safety</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261013g">
-<script src="layers-ui.js?v=20261013g"></script>
+<link rel="stylesheet" href="style.css?v=20261013j">
+<script src="layers-ui.js?v=20261013j"></script>
 <style>
 .lh{margin:10px 0 3px;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--mute);font-weight:600}
 .lh:first-of-type{margin-top:0}
 .ln{display:inline-block;width:14px;height:0;border-top:2px solid;vertical-align:middle}
 .ln.d{border-top-style:dashed}
-.kpi.ls{border-left:3px solid #c92a2a}.kpi.eg{border-left:3px solid #2b8a3e}.kpi.vt{border-left:3px solid #1971c2}
 .kpi .st{float:right;width:8px;height:8px;border-radius:50%;margin-top:4px}
 .st.ok{background:var(--ok)}.st.warn{background:var(--warn)}.st.fail{background:var(--fail)}.st.info{background:var(--info)}
 td.ok{color:var(--ok)}td.warn{color:var(--warn)}td.fail{color:var(--fail)}
@@ -35,6 +34,7 @@ td.ok{color:var(--ok)}td.warn{color:var(--warn)}td.fail{color:var(--fail)}
   <div class="sec"><h3>View</h3>
     <div class="grid2"><button class="btn" data-view="iso">Axon SW</button><button class="btn" data-view="iso2">Axon SE</button><button class="btn" data-view="top">Top</button><button class="btn" data-view="front">Front</button><button class="btn" data-view="side">Side</button><button class="btn" id="bProj">Ortho</button></div>
     <div class="row" style="margin-top:8px"><label>Floor</label><select id="floorSel"></select></div>
+    <div class="row"><label>Explode</label><input type="range" id="explode" min="0" max="20" step="0.5" value="0" style="width:120px"></div>
   </div>
   <div class="sec"><h3>Layers</h3><div id="layers"></div></div>
   <div class="sec"><h3>Assumptions</h3>
@@ -52,9 +52,9 @@ td.ok{color:var(--ok)}td.warn{color:var(--warn)}td.fail{color:var(--fail)}
 <div class="grip" id="rgrip" title="Drag to resize · double-click to reset"></div>
 </main>
 <!-- APP_V: bump on every deploy (also in the import lines at the top of ls-app.js) -->
-<script>window.DATA_DIR = "data/"; window.APP_V = "20261013g";</script>
-<script src="data/project-data.js?v=20261013g"></script>
-<script type="module" src="ls-app.js?v=20261013g"></script>
-<script src="scrollers.js?v=20261013g"></script>
+<script>window.DATA_DIR = "data/"; window.APP_V = "20261013j";</script>
+<script src="data/project-data.js?v=20261013j"></script>
+<script type="module" src="ls-app.js?v=20261013j"></script>
+<script src="scrollers.js?v=20261013j"></script>
 </body>
 </html>

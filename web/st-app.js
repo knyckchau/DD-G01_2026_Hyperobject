@@ -2,8 +2,8 @@
 // from models/*structure*.fbx) against the current slabs and programme, layer by layer.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { CATS } from './engine.js?v=20261013g'; // keep in step with APP_V in st.html
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261013g';
+import { CATS } from './engine.js?v=20261013j'; // keep in step with APP_V in st.html
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261013j';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -153,8 +153,14 @@ function setView(v) {
   }
   controls.target.copy(tgt); camera.position.copy(tgt).add(d.multiplyScalar(radius * 3.2));
   if (camera === ocam) { ocam.zoom = zoom; ocam.updateProjectionMatrix(); } controls.update();
+  markView(v);
 }
-function setProj(o) { ortho = o; const p = camera.position.clone(), t = controls.target.clone(); camera = o ? ocam : pcam; camera.position.copy(p); controls.object = camera; controls.target.copy(t); controls.update(); $('#bProj').textContent = o ? 'Ortho' : 'Persp'; $('#bProj').classList.toggle('on', o); }
+// the active view button stays highlighted until the camera is rotated away from that direction
+let viewDir = null;
+function markView(v) { $$('[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === v)); viewDir = v ? camera.position.clone().sub(controls.target).normalize() : null; }
+controls.addEventListener('change', () => { if (viewDir && camera.position.clone().sub(controls.target).normalize().dot(viewDir) < 0.9995) markView(null); });
+
+function setProj(o) { ortho = o; const p = camera.position.clone(), t = controls.target.clone(); camera = o ? ocam : pcam; camera.position.copy(p); controls.object = camera; controls.target.copy(t); controls.update(); $('#bProj').textContent = o ? 'Ortho' : 'Perspective'; $('#bProj').classList.add('on'); }
 $('#floorSel').innerHTML = '<option value="-1">All floors</option>' + L.map((l, i) => `<option value="${i}">${flName(i)} · +${l.z.toFixed(1)}</option>`).join('');
 $('#floorSel').onchange = e => { floorSel = +e.target.value; applyVis(); setView(floorSel === -1 ? 'iso' : 'top'); };
 $$('[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
@@ -187,6 +193,9 @@ function scaleTags(H = view.clientHeight) {
 function syncTabs() { $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === tab)); }
 $('#tabs').onclick = e => { if (e.target.dataset.t) { tab = e.target.dataset.t; syncTabs(); renderPane(); } };
 const dims = b => `${fmt(b[3] - b[0], 1)} × ${fmt(b[4] - b[1], 1)} m`;
+// summary cards: grouped under text headings, the left bar colour is the status
+const STL = { ok: 'OK', warn: 'Check', fail: 'Fails', info: 'Info' };
+const stLegend = () => `<div class="row" style="gap:10px;font-size:11px;color:var(--mute);margin:0 0 8px">Bar colour = status ${Object.entries(STL).map(([k, l]) => `<span style="display:inline-flex;align-items:center;gap:4px;color:var(--ink)"><i style="display:inline-block;width:3px;height:12px;background:var(--${k})"></i>${l}</span>`).join('')}</div>`;
 function renderPane() {
   const pane = $('#pane');
   if (!S) { pane.innerHTML = '<p style="color:var(--mute)">Loading the structure model…</p>'; return; }
@@ -195,10 +204,10 @@ function renderPane() {
   const B = rows.reduce((b, r) => [0, 1, 2].map(k => Math.min(b[k], r.b[k])).concat([3, 4, 5].map(k => Math.max(b[k], r.b[k]))), [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity]);
   if (tab === 'sum') {
     const grp = SGRP.map(g => ({ g, n: rows.filter(r => r.grp === g).length, nt: rows.filter(r => r.grp === g).reduce((a, r) => a + r.nt, 0) }));
-    pane.innerHTML = `<div class="kpis">
-      <div class="kpi"><b>${SGRP.length}</b><small>FBX groups</small></div><div class="kpi"><b>${rows.length}</b><small>Layers</small></div>
-      <div class="kpi"><b>${fmt(tri)}</b><small>Triangles</small></div><div class="kpi"><b>${fmt(B[5] - B[2], 1)} m</b><small>Height ${fmt(B[2], 1)} → ${fmt(B[5], 1)} m</small></div>
-      <div class="kpi" style="grid-column:1/-1"><b style="font-size:14px">${esc(S.source)}</b><small>Source model · plan extent ${dims(B)}</small></div></div>
+    pane.innerHTML = stLegend() + `<h3 style="font-size:12px;margin:10px 0 6px">Structure model</h3><div class="kpis">
+      <div class="kpi s-info"><b>${SGRP.length}</b><small>FBX groups</small></div><div class="kpi s-info"><b>${rows.length}</b><small>Layers</small></div>
+      <div class="kpi s-info"><b>${fmt(tri)}</b><small>Triangles</small></div><div class="kpi s-info"><b>${fmt(B[5] - B[2], 1)} m</b><small>Height ${fmt(B[2], 1)} → ${fmt(B[5], 1)} m</small></div></div>
+      <h3 style="font-size:12px;margin:10px 0 6px">Source</h3><div class="kpis"><div class="kpi s-warn" style="grid-column:1/-1"><b style="font-size:14px">${esc(S.source)}</b><small>Source model · plan extent ${dims(B)} · older than the 261004 models, check alignment</small></div></div>
     <h3 style="font-size:12px;margin:6px 0">Groups</h3>
     <table><tr><th>Group</th><th>Layers</th><th>Triangles</th></tr>${grp.map(x => `<tr><td>${esc(x.g)}</td><td>${x.n}</td><td>${fmt(x.nt)}</td></tr>`).join('')}</table>
     <div class="note">The structure model (${esc(S.source)}) predates the 261004 programme and core models, so check alignment before reading it against slabs, cores or shafts. Turn on Programme volumes under Context to compare. Click a member in the model to inspect its layer.</div>`;

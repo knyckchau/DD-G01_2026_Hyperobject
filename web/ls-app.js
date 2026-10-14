@@ -6,10 +6,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
-import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261013g'; // keep in step with APP_V in ls.html
-import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261013g';
-import { LS_Q } from './ls-codes.js?v=20261013g';
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261013g';
+import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261013j'; // keep in step with APP_V in ls.html
+import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261013j';
+import { LS_Q } from './ls-codes.js?v=20261013j';
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261013j';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -23,7 +23,7 @@ const SS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch
 let A = { ...DEFAULTS, ...(LS('mep.A') || {}) };
 let C = JSON.parse(JSON.stringify(CATS)); { const s = LS('mep.C'); if (s) for (const k in s) Object.assign(C[k] ||= {}, s[k]); }
 let model = null, R = null, G = { elevators: [], lobbies: [] }, detailState = 0;
-let tab = 'sum', floorSel = -1, ortho = true, dark = false, selected = null, kpiSel = null;
+let tab = 'sum', floorSel = -1, ortho = true, dark = false, selected = null, kpiSel = null, explode = 0;
 const L = P.levels, roofIdx = L.length - 1;
 const flName = i => i === -1 ? 'B1' : i === roofIdx ? 'RT' : 'L' + String(i + 1).padStart(2, '0');
 
@@ -366,10 +366,14 @@ function applyVis() {
     if (k === 'occ') v = v && gr[o.userData.grp] !== false;
     if (k === 'shell') v = v && floorSel < 0;
     if (o.isSprite && floorSel === -1 && DETAIL_TAGS.has(k)) v = false;   // per-floor tags only in single-floor views
+    // explode: each floor's objects rise by floor × spacing; full-height objects (cores, stair and elevator shafts) hide, as on the MEP page
+    const fl = o.userData.fl; if (o.userData.z0 === undefined) o.userData.z0 = o.position.z;
+    o.position.z = o.userData.z0 + (fl == null ? 0 : fl * explode);
+    if (explode > 0 && fl == null) v = false;
     o.visible = v;
   }
-  if (floorSel === -2) { clipLo.constant = -((P.basementZ ?? 0) - 1); clipHi.constant = L[0].z + 0.5; }
-  else if (floorSel >= 0) { const z0 = L[floorSel].z - 0.05, z1 = (L[floorSel + 1]?.z ?? L[floorSel].z + 9) - 0.05; clipLo.constant = -z0; clipHi.constant = z1; }
+  if (floorSel === -2) { clipLo.constant = -((P.basementZ ?? 0) - 1 - explode); clipHi.constant = L[0].z + 0.5 - explode; }
+  else if (floorSel >= 0) { const e = floorSel * explode, z0 = L[floorSel].z - 0.05 + e, z1 = (L[floorSel + 1]?.z ?? L[floorSel].z + 9) - 0.05 + e; clipLo.constant = -z0; clipHi.constant = z1; }
   else { clipLo.constant = 1e4; clipHi.constant = 1e4; }
   status();
 }
@@ -412,11 +416,11 @@ addEventListener('resize', resize);
 function setView(v) {
   const dirs = { iso: [-1, -1.15, 0.85], iso2: [1.1, -1, 0.8], top: [0, -0.001, 1], front: [0, -1, 0.02], side: [1, 0, 0.02] };
   const d = new THREE.Vector3(...dirs[v]).normalize();
-  let tgt = floorSel === -2 ? new THREE.Vector3(center.x, center.y, P.basementZ ?? 0) : center.clone(), zoom = 1;
+  let tgt = floorSel === -2 ? new THREE.Vector3(center.x, center.y, (P.basementZ ?? 0) - explode) : center.clone().add(new THREE.Vector3(0, 0, explode * L.length / 2)), zoom = 1;
   if (floorSel >= 0) {   // fit the floor plate
     const xs = [], ys = []; for (const t of L[floorSel].tris) for (let k = 0; k < 6; k += 2) { xs.push(t[k]); ys.push(t[k + 1]); }
     const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), s = radius * 1.1, asp = view.clientWidth / view.clientHeight;
-    tgt = new THREE.Vector3((x0 + x1) / 2, (y0 + y1) / 2, L[floorSel].z);
+    tgt = new THREE.Vector3((x0 + x1) / 2, (y0 + y1) / 2, L[floorSel].z + floorSel * explode);
     if (v === 'top') zoom = 0.82 * Math.min(2 * s * asp / (x1 - x0 + 1), 2 * s / (y1 - y0 + 1));
   }
   controls.target.copy(tgt); camera.position.copy(tgt).add(d.multiplyScalar(radius * 3.2));
@@ -426,9 +430,16 @@ function setView(v) {
     camera.updateMatrixWorld(); const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0), k = -radius * 0.22;
     controls.target.addScaledVector(right, k); camera.position.addScaledVector(right, k); controls.update();
   }
+  markView(v);
 }
-function setProj(o) { ortho = o; const p = camera.position.clone(), t = controls.target.clone(); camera = o ? ocam : pcam; camera.position.copy(p); controls.object = camera; controls.target.copy(t); controls.update(); $('#bProj').textContent = o ? 'Ortho' : 'Persp'; $('#bProj').classList.toggle('on', o); }
+// the active view button stays highlighted until the camera is rotated away from that direction
+let viewDir = null;
+function markView(v) { $$('[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === v)); viewDir = v ? camera.position.clone().sub(controls.target).normalize() : null; }
+controls.addEventListener('change', () => { if (viewDir && camera.position.clone().sub(controls.target).normalize().dot(viewDir) < 0.9995) markView(null); });
+
+function setProj(o) { ortho = o; const p = camera.position.clone(), t = controls.target.clone(); camera = o ? ocam : pcam; camera.position.copy(p); controls.object = camera; controls.target.copy(t); controls.update(); $('#bProj').textContent = o ? 'Ortho' : 'Perspective'; $('#bProj').classList.add('on'); }
 $('#floorSel').innerHTML = '<option value="-1">All floors</option><option value="-2">B1 · basement</option>' + L.map((l, i) => `<option value="${i}">${flName(i)} · +${l.z.toFixed(1)}</option>`).join('');
+$('#explode').oninput = e => { explode = +e.target.value; applyVis(); };
 const setFloor = i => { floorSel = i; $('#floorSel').value = i; applyVis(); setView(i === -1 ? 'iso' : i === -2 ? 'iso2' : 'top'); renderPane(); };
 $('#floorSel').onchange = e => setFloor(+e.target.value);
 $$('[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
@@ -475,18 +486,18 @@ function kpis() {
   const cutN = R.rows.reduce((a, r) => a + r.cut.length, 0), ur = R.rows.filter(r => r.unreachM2 > 2 && !r.roof).reduce((a, r) => a + r.unreachM2, 0);
   const fse = R.elevators.filter(e => e.fse), toRoof = R.stairs.filter(s => s.toRoof);
   return [
-    ['occ', 'eg', fmt(occAll), `Occupant load, all storeys (${R.rows.filter(r => r.occ).length} storeys)`, 'info'],
-    ['exits', 'eg', `${okN('exits')} / ${n}`, `Storeys with enough exits (${span})`, worstSt(rows.map(r => r.st.exits))],
-    ['cap', 'eg', `${okN('cap')} / ${n}`, `Storeys within stair capacity, ${fmt(R.capPer)} occ per stair (${span})`, worstSt(rows.map(r => r.st.cap))],
-    ['sep', 'eg', `${okN('sep')} / ${n}`, `Storeys with exit separation ≥ ⅓ diagonal (${span})`, worstSt(rows.map(r => r.st.sep))],
-    ['travel', 'eg', `${zs.filter(z => z.status === 'ok').length} / ${zs.length}`, 'Spaces within the path of travel limit', worstSt(zs.map(z => z.status))],
-    ['cpet', 'eg', `${zs.filter(z => z.cpStatus === 'ok').length} / ${zs.length}`, 'Spaces within the common path limit', worstSt(zs.map(z => z.cpStatus))],
-    ['reach', 'eg', `${cutN}`, `Stair doors opening onto no floor${ur ? ` · ${fmt(ur)} m² with no route` : ''}`, cutN || ur ? 'fail' : 'ok'],
-    ['hr', 'ls', `${fmt(R.hf)} ft`, 'Top occupied floor above lowest level', item('hr')?.status || 'ok'],
-    ['fse', 'vt', fse.length ? fse.map(e => e.id).join('/') : (detailState < 2 ? '…' : 'none'), 'Fire service access elevator (candidates)', item('fse')?.status || 'info'],
-    ['roof', 'vt', toRoof.length ? toRoof.map(s => s.id).join(', ') : 'none', 'Stairway to roof', item('roof')?.status || 'ok'],
-    ['sp', 'ls', `${R.stairs.length}`, 'Standpipes (one per exit stair)', item('roof')?.status === 'fail' ? 'warn' : 'ok'],
-    ['haz', 'ls', `${R.rows.filter(r => r.multi.length).length} storeys`, 'Atrium · special amusement · mixed occupancy', 'warn'],
+    ['occ', 'Egress', fmt(occAll), `Occupant load, all storeys (${R.rows.filter(r => r.occ).length} storeys)`, 'info'],
+    ['exits', 'Egress', `${okN('exits')} / ${n}`, `Storeys with enough exits (${span})`, worstSt(rows.map(r => r.st.exits))],
+    ['cap', 'Egress', `${okN('cap')} / ${n}`, `Storeys within stair capacity, ${fmt(R.capPer)} occ per stair (${span})`, worstSt(rows.map(r => r.st.cap))],
+    ['sep', 'Egress', `${okN('sep')} / ${n}`, `Storeys with exit separation ≥ ⅓ diagonal (${span})`, worstSt(rows.map(r => r.st.sep))],
+    ['travel', 'Egress', `${zs.filter(z => z.status === 'ok').length} / ${zs.length}`, 'Spaces within the path of travel limit', worstSt(zs.map(z => z.status))],
+    ['cpet', 'Egress', `${zs.filter(z => z.cpStatus === 'ok').length} / ${zs.length}`, 'Spaces within the common path limit', worstSt(zs.map(z => z.cpStatus))],
+    ['reach', 'Egress', `${cutN}`, `Stair doors opening onto no floor${ur ? ` · ${fmt(ur)} m² with no route` : ''}`, cutN || ur ? 'fail' : 'ok'],
+    ['hr', 'High-rise and fire protection', `${fmt(R.hf)} ft`, 'Top occupied floor above lowest level', item('hr')?.status || 'ok'],
+    ['fse', 'Vertical transport', fse.length ? fse.map(e => e.id).join('/') : (detailState < 2 ? '…' : 'none'), 'Fire service access elevator (candidates)', item('fse')?.status || 'info'],
+    ['roof', 'Vertical transport', toRoof.length ? toRoof.map(s => s.id).join(', ') : 'none', 'Stairway to roof', item('roof')?.status || 'ok'],
+    ['sp', 'High-rise and fire protection', `${R.stairs.length}`, 'Standpipes (one per exit stair)', item('roof')?.status === 'fail' ? 'warn' : 'ok'],
+    ['haz', 'High-rise and fire protection', `${R.rows.filter(r => r.multi.length).length} storeys`, 'Atrium · special amusement · mixed occupancy', 'warn'],
   ];
 }
 function kpiInfo(k) {
@@ -531,16 +542,19 @@ function kpiInfo(k) {
   if (!I) return '';
   return `<div class="kinfo"><button class="x" data-kx title="Close">✕</button><h4>${I[0]}</h4><div class="code">${I[1]}</div>${quotes(k)}<div class="f">${esc(I[2])}</div>${I[3] ? `<p>${esc(I[3])}</p>` : ''}</div>`;
 }
-const card = ([k, c, v, l, st]) => `<div class="kpi ${c}${kpiSel === k ? ' sel' : ''}" data-k="${k}"><i class="st ${st}"></i><b>${v}</b><small>${l}</small></div>`;
+// cards are grouped under text headings; the left bar colour is the status (legend above the cards)
+const STL = { ok: 'OK', warn: 'Check', fail: 'Fails', info: 'Info' };
+const card = ([k, , v, l, st]) => `<div class="kpi s-${st}${kpiSel === k ? ' sel' : ''}" data-k="${k}" title="${STL[st]}"><b>${v}</b><small>${l}</small></div>`;
 function renderPane() {
   const pane = $('#pane'); if (!R) return;
   const cnt = R.items.reduce((a, x) => (a[x.status] = (a[x.status] || 0) + 1, a), {});
   const pills = c => ['fail', 'warn', 'ok', 'info'].map(k => c[k] ? `<span class="pill ${k}">${c[k]} ${k}</span> ` : '').join('');
   if (tab === 'sum') {
-    const K = kpis(); let cards = '';
-    // detail box goes after the row (pair of cards) holding the selected card
-    K.forEach((x, i) => { cards += card(x); const rowEnd = i % 2 === 1 || i === K.length - 1; if (kpiSel && rowEnd && (x[0] === kpiSel || (i % 2 === 1 && K[i - 1][0] === kpiSel))) cards += kpiInfo(kpiSel); });
-    pane.innerHTML = `<div class="kpis${kpiSel ? ' focus' : ''}">${cards}</div>
+    const K = kpis(), groups = [...new Set(K.map(x => x[1]))];
+    const legend = `<div class="row" style="gap:10px;font-size:11px;color:var(--mute);margin:0 0 8px">Bar colour = status ${Object.entries(STL).map(([k, l]) => `<span style="display:inline-flex;align-items:center;gap:4px;color:var(--ink)"><i style="display:inline-block;width:3px;height:12px;background:var(--${k})"></i>${l}</span>`).join('')}</div>`;
+    // detail box goes after the row (pair of cards) holding the selected card, within its group
+    const grid = G => { let cards = ''; G.forEach((x, i) => { cards += card(x); const rowEnd = i % 2 === 1 || i === G.length - 1; if (kpiSel && rowEnd && (x[0] === kpiSel || (i % 2 === 1 && G[i - 1][0] === kpiSel))) cards += kpiInfo(kpiSel); }); return `<div class="kpis${kpiSel ? ' focus' : ''}">${cards}</div>`; };
+    pane.innerHTML = legend + groups.map(g => `<h3 style="font-size:12px;margin:10px 0 6px">${g}</h3>` + grid(K.filter(x => x[1] === g))).join('') + `
     <h3 style="font-size:12px;margin:6px 0">Checks</h3><div>${pills(cnt)}</div>
     <h3 style="font-size:12px;margin:12px 0 6px">Floors</h3>
     <table><tr><th>Floor</th><th>Occ</th><th>Exits</th><th>Cap</th><th>Sep</th><th>Travel</th><th>CP</th></tr>${R.rows.map(r => `<tr data-f="${r.idx}" class="${floorSel === r.idx ? 'sel' : ''}"><td>${pill(r.status)} ${r.name}</td><td>${fmt(r.occ)}</td>${['exits', 'cap', 'sep', 'travel', 'cpet'].map(k => `<td class="${r.st[k]}">${MARK[r.st[k]]}</td>`).join('')}</tr>`).join('')}</table>
@@ -616,7 +630,8 @@ $('#bPng').onclick = () => exportPNG(3840, 2160);
 $('#bPng8').onclick = () => exportPNG(7680, 4320);
 // Rhino / OBJ: what is visible now, one layer per layer-list entry (LS::group::layer); tags become text dots in Rhino
 const LPATH = Object.fromEntries(LAYERS.flatMap(([g, ls]) => ls.map(([k, l]) => [k, `LS::${g.replace(/&/g, 'and')}::${l.replace(/\s*\(.*\)/, '').replace(/ \+ /g, ' and ')}`])));
-const visItems = () => collect([root], {
+const visItems = () => { const ex = explode; if (ex) { explode = 0; const vis = []; for (const g of [statG, dynG]) for (const o of g.children) vis.push(o.visible); applyVis(); let n = 0; for (const g of [statG, dynG]) for (const o of g.children) o.visible = vis[n++]; } const items = collectItems(); if (ex) { explode = ex; applyVis(); } return items; };
+const collectItems = () => collect([root], {
   layerOf: own => { const k = own.userData.layer; return LPATH[k] || 'LS::Other::' + k; },
   zRange: floorSel >= 0 ? [L[floorSel].z - 0.05, (L[floorSel + 1]?.z ?? L[floorSel].z + 9) - 0.05] : floorSel === -2 ? [(P.basementZ ?? 0) - 1, L[0].z + 0.5] : null,
 });

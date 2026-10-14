@@ -103,3 +103,5 @@ input,select,button,textarea{color-scheme:light}
 .dd .ddm .btn:hover{background:#f0f0ec}
 /* status pills in table cells share one width so the names after them line up */
 td .pill{display:inline-block;min-width:40px;text-align:center;box-sizing:border-box}
+/* summary cards: left bar colour = status (all pages) */
+.kpi.s-ok{border-left:3px solid var(--ok)}.kpi.s-warn{border-left:3px solid var(--warn)}.kpi.s-fail{border-left:3px solid var(--fail)}.kpi.s-info{border-left:3px solid var(--info)}
