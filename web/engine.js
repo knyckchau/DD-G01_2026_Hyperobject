@@ -487,6 +487,12 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
     // shafts as ghost boxes
     for (const [sys, sh] of Object.entries(shafts)) { const top = Math.min(z1, sh.z1 ?? z1); if (top > z0) box(sys, 'Shaft', i, [(sh.x0 + sh.x1) / 2, (sh.y0 + sh.y1) / 2, (z0 + top) / 2], [sh.x1 - sh.x0, sh.y1 - sh.y0, top - z0], { tag: sh.name, area_m2: sh.area, required_m2: sh.reqArea, ghost: true, rating: '2-hr (≥4 stories, NYC BC 713.4)' }); }
   }
+  // roof manifold: hose outlets on top of a standpipe, so it needs a stair (and its standpipe) that reaches the roof
+  const rmStair = stairs.filter(s => s.top >= zRoof - 0.5).sort((p, q) => q.top - p.top)[0] || null;
+  if (rmStair) box('Fire', 'Roof manifold', roofIdx, [rmStair.sx, rmStair.sy, zRoof + 0.5], [0.8, 0.5, 1.0], { tag: 'RM', note: `Roof manifold on SP-${rmStair.id}` });
+  // fire command center (high-rise): not in the model, placeholder at grade in the lobby volume (else slab centre)
+  const fccVol = P.volumes.find(v => v.floor === 0 && v.cat === 'lobby'), fccC = fccVol?.c || [cx, cy];
+  box('Fire', 'Fire command center', 0, [fccC[0], fccC[1], L[0].z + 1.5], [3, 3, 3], { tag: 'FCC', placeholder: true, note: 'Not in the model: location by FDNY approval, at grade near the main entrance and the FSE lobby' });
   // vent stack must extend through the roof: offset from the top of the plumbing chase to the main shaft
   if (plbTop < zRoof - 0.5) {
     const vIt = plbItems.find(i => i.k === 'V'), lastF = floors.find(f => plbTop >= f.z - 0.1 && plbTop < f.zNext) || floors[nOcc - 1];
@@ -612,7 +618,7 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
   const summary = {
     ...tot, hvacKW, elevKW, connKVA, demandKVA, amps, svcA, genKW, fpHp, fpHeadPsi, reqPsi, boosterPsi, pZones, gpmPeak,
     stormGpm, leaders, leaderIn: leaderSize(stormGpm / leaders), totDFU, stackIn: stackSize(totDFU), totWsfu: totWsfuT,
-    shafts, plantM2: plantFt, roofTechM2: rt ? rt.area : 0, overflow, concept: A.concept, nPass, nFr, nStand, spFlow, stairs: stairs.map(s => ({ id: s.id, top: s.top })),
+    shafts, plantM2: plantFt, roofTechM2: rt ? rt.area : 0, overflow, concept: A.concept, nPass, nFr, nStand, spFlow, stairs: stairs.map(s => ({ id: s.id, top: s.top })), manifold: rmStair?.id ?? null, roofZ: zRoof,
     basement: { rooms: basRes.rooms.map(r => ({ id: r.id, area: r.area, used: r1(r.used) })), over: basRes.over.map(q => q.props.tag), foot: r1(basRes.foot) }, roofOver: roofRes.over.map(q => q.props.tag),
     fixtures: floors.reduce((s, f) => { for (const k in f.fix) s[k] = (s[k] || 0) + f.fix[k]; return s; }, {}),
     heightFt: (L[nOcc - 1].z - L[0].z) * FT, roofFt2, genLS, fpElevFt, topFixFt,
@@ -652,6 +658,8 @@ export function generate(P, A = DEFAULTS, cats = CATS) {
   ck('warn', 'Plumbing', 'Sanitary stack', `${r0(totDFU)} DFU → ${summary.stackIn} in stack; building drain ${drainSize(totDFU)} in at 1/8 in/ft. Kitchen grease interceptor TBD.`, 'NYC PC Tables 710.1(1)/(2)');
   ck(svcA > 4000 ? 'warn' : 'ok', 'Electrical', 'Service size', `Connected ${r0(connKVA)} kVA → demand+spare ${r0(demandKVA)} kVA ≈ ${r0(amps)} A → ${svcA} A @ ${A.voltage}Y/277 V${svcA > 4000 ? ' (exceeds 4000 A: multiple services / spot network per Con Edison)' : ''}.`, 'NYC EC Art. 220/230');
   ck('warn', 'Electrical', 'Emergency & standby power', `Generator ≈ ${genKW} kW (egress lighting, FA, smoke control, fire pump ${fpHp} hp, fire service elevator). Separate emergency risers, 2-hr protection.`, 'NYC BC §403.4.8 / EC Art. 700/701');
+  ck(rmStair ? 'ok' : 'fail', 'Fire', 'Roof manifold', rmStair ? `On SP-${rmStair.id} at the roof (+${r1(zRoof)}).` : `No standpipe reaches the roof (+${r1(zRoof)}): standpipes run in the stairs and the highest stair stops at +${r1(Math.max(...stairs.map(s => s.top)))}. Extend a stair (and its standpipe) to the roof.`, 'NYC BC App. Q (NFPA 14 §7.3.2.1 mod.), §1011.12');
+  if (hf > 75) ck('info', 'Fire', 'Fire command center', 'Not in the model (placeholder shown at grade). Locate at grade in a position approved by FDNY, typically next to the main entrance and the FSE lobby; size and contents per §911.', 'NYC BC §403.4.6, §911');
   ck('warn', 'Fire', 'Standpipes & fire pump', `${nStand} combined standpipes (6 in), one per modelled stair (${stairs.map(s => s.id + ' to +' + r1(s.top)).join(', ')}). Fire pump ≈ ${spFlow} gpm @ ${r0(fpHeadPsi)} psi (${fpHp} hp) for ${A.topOutletPsi} psi at the roof manifold. ${fpHeadPsi + A.streetPsi > 175 ? 'System pressure >175 psi → high-pressure components / zoning.' : ''}`, 'NYC BC §905 / App. Q (NFPA 14 §7.8.1 mod.) / NFPA 20');
   ck(nPass + nFr ? 'warn' : 'fail', 'Building', 'Elevators', `${nPass} passenger + ${nFr} freight in the model. Confirm which car is the fire service access elevator (lobby, standby power) and car capacities for the electrical load.`, 'NYC BC §3007');
   { const imm = floors.flatMap(f => f.zones.filter(z => z.projectors)); const np = imm.reduce((a, z) => a + z.projectors, 0);

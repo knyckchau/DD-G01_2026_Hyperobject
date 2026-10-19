@@ -6,10 +6,13 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
-import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261013j'; // keep in step with APP_V in ls.html
-import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261013j';
-import { LS_Q } from './ls-codes.js?v=20261013j';
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261013j';
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
+import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261018zp'; // keep in step with APP_V in ls.html
+import { viewTools } from './viewtools.js?v=20261018zp';
+import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261018zp';
+import { LS_Q } from './ls-codes.js?v=20261018zp';
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261018zp';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -36,7 +39,7 @@ const MARK = { ok: '✓', warn: '!', fail: '✕', info: 'i' };
 
 // ---------- three setup ----------
 const view = $('#view');
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
 renderer.localClippingEnabled = true; renderer.setPixelRatio(Math.min(2, devicePixelRatio));
 view.prepend(renderer.domElement);
 const scene = new THREE.Scene();
@@ -57,10 +60,9 @@ const clipLo = new THREE.Plane(new THREE.Vector3(0, 0, 1), 1e4), clipHi = new TH
 // [key, label, default on, swatch]; 'line:'/'dline:' swatches draw a solid / dashed line sample
 const LAYERS = [
   ['Base', [['slabs', 'Slabs', 1], ['labels', 'Floor labels + egress status', 1], ['occ', 'Programme by occupancy group', 1, 'tree'], ['occTags', 'Occupant load tags', 1], ['core', 'Core walls (core model)', 1], ['walls', 'Walls cut at +1.0 m (routing)', 1, '#343a40']]],
-  ['Vertical exits', [['stairs', 'Exit stair enclosures', 1, COLR.stair], ['stairGeo', 'Stair flights (core model)', 0], ['stairTags', 'Stair ID tags', 1], ['vest', 'Smokeproof vestibules', 1, COLR.vest], ['roof', 'Stairway to roof', 1, 'dline:' + STC.fail], ['base', 'Basement exits', 1, 'dline:' + STC.fail], ['cutdoor', 'Stair doors opening onto no floor', 1, STC.fail]]],
-  ['Horizontal egress', [['heat', 'Walking distance to nearest exit (map)', 0, 'grad'], ['paths', 'Path of travel (most remote point of each space → nearest exit)', 1, 'oline:' + STC.ok], ['cpet', 'Common path of egress travel', 1, 'cline:' + STC.ok], ['travel2', 'Second exit path (Group A)', 0, 'sline:' + STC.ok], ['sep', 'Exit separation vs ⅓ diagonal', 0, 'dline:#868e96'], ['unreach', 'Floor with no path to a stair', 1, STC.fail]]],
+  ['Vertical exits', [['stairs', 'Exit stair enclosures', 1, COLR.stair], ['stairGeo', 'Stair flights (core model)', 0], ['stairTags', 'Stair ID tags', 1], ['vest', 'Smokeproof vestibules', 1, COLR.vest], ['roof', 'Stairway to roof', 1, 'tup:' + STC.fail], ['base', 'Basement exits', 1, 'tdn:' + STC.fail], ['cutdoor', 'Stair doors opening onto no floor', 1, STC.fail]]],
+  ['Horizontal egress', [['heat', 'Walking distance to nearest exit (map)', 0, 'grad'], ['paths', 'Path of travel (most remote point of each space → nearest exit)', 1, 'oline:' + STC.ok], ['cpet', 'Common path of egress travel', 1, 'cline:' + STC.ok], ['travel2', 'Second exit path (Group A)', 0, 'pline:' + STC.ok], ['sep', 'Exit separation vs ⅓ diagonal', 0, 'chline:#868e96'], ['unreach', 'Floor with no path to a stair', 1, STC.fail]]],
   ['Elevators', [['elev', 'Elevator cars', 1, COLR.elev], ['fse', 'Fire service access elevator (candidates)', 1, COLR.fse], ['elobby', 'Elevator lobby', 1, COLR.elobby]]],
-  ['Fire protection', [['standpipe', 'Standpipes + hose valves', 1, COLR.sp], ['manifold', 'Roof manifold', 1], ['fcc', 'Fire command center (placeholder)', 1, COLR.fcc]]],
   ['Hazards & separation', [['atrium', 'Multi-storey volumes (atrium)', 1, COLR.atr], ['imm', 'Immersive halls (§411)', 0, COLR.imm], ['mix', 'Mixed-occupancy floors (§508.4)', 0, 'dline:' + STC.fail]]],
   ['Context', [['shell', 'Basement / site context', 0], ['tech', 'Basement technical rooms', 1, COLR.tech]]],
 ];
@@ -82,21 +84,18 @@ const LEG = {
   stairGeo: [1, BOX('#c3e6cb'), 'Stair flights'],
   stairTags: [2, TAG(COLR.stair), 'Stair ID'],
   vest: [1, BOX(COLR.vest, 0.6, COLR.vest), 'Smokeproof vestibule'],
-  roof: [2, '<svg width="22" height="10" style="vertical-align:middle;flex:none"><line x1="11" y1="0" x2="11" y2="10" stroke="' + STC.fail + '" stroke-width="2.5" stroke-dasharray="3 2"/></svg>', 'No stair to roof'],
-  base: [2, '<svg width="22" height="10" style="vertical-align:middle;flex:none"><line x1="11" y1="0" x2="11" y2="10" stroke="' + STC.fail + '" stroke-width="2.5" stroke-dasharray="3 2"/></svg>', 'No stair to basement'],
+  roof: [2, `<svg width="22" height="15" style="vertical-align:middle;flex:none">${[0, 6, 12].map(y => `<path d="M8.5 ${y + 3}L11 ${y}L13.5 ${y + 3}Z" fill="${STC.fail}"/>`).join('')}</svg>`, 'No stair to roof (missing run, up)'],
+  base: [2, `<svg width="22" height="15" style="vertical-align:middle;flex:none">${[0, 6, 12].map(y => `<path d="M8.5 ${y}L11 ${y + 3}L13.5 ${y}Z" fill="${STC.fail}"/>`).join('')}</svg>`, 'No stair to basement (missing run, down)'],
   cutdoor: [2, TAG(STC.fail), 'Stair door onto no floor'],
   heat: [1, GRAD, 'Walking distance 0 · 75 · 150 · 240 ft'],
-  cpet: [2, SVGL(STC.ok, 5), 'Common path of egress travel'],
-  paths: [2, SVGL(STC.ok, 3.6, '0.5 4', 'round'), 'Path of travel'],
-  travel2: [2, '<svg width="22" height="10" style="vertical-align:middle;flex:none"><line x1="1" y1="5" x2="21" y2="5" stroke="' + STC.ok + '" stroke-width="1.2"/><path d="M6 2 L10 5 L6 8 M14 2 L18 5 L14 8" fill="none" stroke="' + STC.ok + '" stroke-width="1.8"/></svg>', '2nd exit (Group A)'],
-  sep: [2, '<svg width="22" height="12" style="vertical-align:middle;flex:none"><line x1="2" y1="3" x2="20" y2="3" stroke="#868e96" stroke-width="1.3" stroke-dasharray="3 2"/><line x1="2" y1="0.5" x2="2" y2="5.5" stroke="#868e96" stroke-width="1.4"/><line x1="20" y1="0.5" x2="20" y2="5.5" stroke="#868e96" stroke-width="1.4"/><line x1="2" y1="9" x2="20" y2="9" stroke="' + STC.ok + '" stroke-width="2"/><line x1="2" y1="6.5" x2="2" y2="11.5" stroke="' + STC.ok + '" stroke-width="1.8"/><line x1="20" y1="6.5" x2="20" y2="11.5" stroke="' + STC.ok + '" stroke-width="1.8"/></svg>', 'Max diagonal × ⅓ · stair separation (edge)'],
+  cpet: [2, SVGL(STC.ok, 3.6), 'Common path of egress travel'],
+  paths: [2, SVGL(STC.ok, 3.6, '0.5 10.1', 'round'), 'Path of travel'],
+  travel2: [2, SVGL(STC.ok, 3.6, '0.5 2.6 0.5 7', 'round'), '2nd exit (Group A)'],
+  sep: [2, '<svg width="22" height="12" style="vertical-align:middle;flex:none" opacity="0.5"><line x1="2" y1="3" x2="20" y2="3" stroke="#868e96" stroke-width="1.3" stroke-dasharray="7 2"/><line x1="2" y1="0.5" x2="2" y2="5.5" stroke="#868e96" stroke-width="1.4"/><line x1="20" y1="0.5" x2="20" y2="5.5" stroke="#868e96" stroke-width="1.4"/><line x1="2" y1="9" x2="20" y2="9" stroke="' + STC.ok + '" stroke-width="2" stroke-dasharray="7 2"/><line x1="2" y1="6.5" x2="2" y2="11.5" stroke="' + STC.ok + '" stroke-width="1.8"/><line x1="20" y1="6.5" x2="20" y2="11.5" stroke="' + STC.ok + '" stroke-width="1.8"/></svg>', 'Max diagonal × ⅓ · exit separation (door to door)'],
   unreach: [1, BOX(STC.fail, 0.45), 'Floor with no route to a stair'],
   elev: [1, BOX(COLR.elev, 0.5, COLR.elev), 'Elevator car'],
   fse: [1, OUT(COLR.fse), 'FSE candidate'],
   elobby: [1, BOX(COLR.elobby, 0.45, COLR.elobby), 'Elevator lobby'],
-  standpipe: [2, '<svg width="22" height="10" style="vertical-align:middle;flex:none"><line x1="9" y1="5" x2="21" y2="5" stroke="' + COLR.sp + '" stroke-width="3"/><circle cx="4" cy="5" r="3" fill="' + COLR.sp + '"/></svg>', 'Standpipe · hose valve'],
-  manifold: [2, DOT(COLR.sp, 4.5), 'Roof manifold'],
-  fcc: [1, BOX(COLR.fcc, 0.3, COLR.fcc), 'Fire command center (TBD)'],
   atrium: [1, OUT(COLR.atr), 'Multi-storey volume (atrium)'],
   imm: [1, BOX(COLR.imm, 0.35), 'Immersive hall (§411)'],
   mix: [2, SVGL(STC.fail, 2.2, '7 2'), 'Mixed-occupancy floor (§508.4)'],
@@ -105,7 +104,7 @@ const LEG = {
 };
 const STATUS_LAYERS = ['paths', 'cpet', 'travel2', 'labels', 'sep'];
 const savedLay = LS('ls.layers') || {};
-const sw = s => !s ? '' : s === 'grad' ? '<span class="sw" style="width:16px;background:linear-gradient(90deg,#d3f9d8,#ffe066,#f76707,#c92a2a)"></span>' : s.startsWith('cline:') ? `<span class="ln" style="border-color:${s.slice(6)};border-top-width:3.5px"></span>` : s.startsWith('sline:') ? `<svg width="16" height="8" style="vertical-align:middle"><line x1="2" y1="4" x2="15" y2="4" stroke="${s.slice(6)}" stroke-width="2" stroke-dasharray="0.5 5" stroke-linecap="round"/></svg>` : s.startsWith('oline:') ? `<svg width="16" height="8" style="vertical-align:middle"><line x1="2" y1="4" x2="15" y2="4" stroke="${s.slice(6)}" stroke-width="2.24" stroke-dasharray="0.35 2.52" stroke-linecap="round"/></svg>` : s.startsWith('line:') ? `<span class="ln" style="border-color:${s.slice(5)}"></span>` : s.startsWith('dline:') ? `<span class="ln d" style="border-color:${s.slice(6)}"></span>` : `<span class="sw" style="background:${s}"></span>`;
+const sw = s => !s ? '' : s === 'grad' ? '<span class="sw" style="width:16px;background:linear-gradient(90deg,#d3f9d8,#ffe066,#f76707,#c92a2a)"></span>' : s.startsWith('cline:') ? `<span class="ln" style="border-color:${s.slice(6)};border-top-width:2.24px"></span>` : s.startsWith('sline:') ? `<svg width="16" height="8" style="vertical-align:middle"><line x1="2" y1="4" x2="15" y2="4" stroke="${s.slice(6)}" stroke-width="2" stroke-dasharray="0.5 5" stroke-linecap="round"/></svg>` : s.startsWith('pline:') ? `<svg width="16" height="8" style="vertical-align:middle"><line x1="2" y1="4" x2="15" y2="4" stroke="${s.slice(6)}" stroke-width="2.24" stroke-dasharray="0.35 1.8 0.35 5" stroke-linecap="round"/></svg>` : s.startsWith('oline:') ? `<svg width="16" height="8" style="vertical-align:middle"><line x1="2" y1="4" x2="15" y2="4" stroke="${s.slice(6)}" stroke-width="2.24" stroke-dasharray="0.35 7.15" stroke-linecap="round"/></svg>` : s.startsWith('line:') ? `<span class="ln" style="border-color:${s.slice(5)}"></span>` : s.startsWith('tup:') || s.startsWith('tdn:') ? `<svg width="16" height="15" style="vertical-align:middle">${[0, 6, 12].map(y => s.startsWith('tup:') ? `<path d="M5.5 ${y + 3}L8 ${y}L10.5 ${y + 3}Z" fill="${s.slice(4)}"/>` : `<path d="M5.5 ${y}L8 ${y + 3}L10.5 ${y}Z" fill="${s.slice(4)}"/>`).join('')}</svg>` : s.startsWith('gbox:') ? `<span class="sw" style="background:${s.slice(5)}26;outline:1.5px solid ${s.slice(5)};outline-offset:-1.5px"></span>` : s.startsWith('chline:') ? `<svg width="16" height="8" style="vertical-align:middle"><line x1="1" y1="4" x2="15" y2="4" stroke="${s.slice(7)}" stroke-width="1.6" stroke-dasharray="6 2" opacity="0.5"/></svg>` : s.startsWith('dline:') ? `<span class="ln d" style="border-color:${s.slice(6)}"></span>` : `<span class="sw" style="background:${s}"></span>`;
 // layer list: group headings switch a whole group; Clear selection turns every layer off
 const ALWAYS = new Set();
 let volOp = Math.min(0.3, Math.max(0.05, LS('ls.volOp') ?? 0.07));
@@ -118,7 +117,7 @@ let volOp = Math.min(0.3, Math.max(0.05, LS('ls.volOp') ?? 0.07));
     return `<label class="chk"><input type="checkbox" data-layer="${k}" ${chk ? 'checked' : ''} ${dis}>${LEG[k] ? LEG[k][1] : sw(s)}${l}</label>`;
   };
   $('#layers').innerHTML = `<button class="btn" id="bLayClear" style="width:100%;margin-bottom:8px">Clear selection</button>`
-    + `<div class="row" style="gap:10px;font-size:11px;color:var(--mute);margin:0 0 6px">Line colour = status ${[['ok', 'OK'], ['warn', 'Check'], ['fail', 'Fails']].map(([k, l]) => `<span style="display:inline-flex;align-items:center;gap:4px;color:var(--ink)"><i class="sw" style="background:${STC[k]}"></i>${l}</span>`).join('')}</div>`
+    + `<div class="row" style="gap:10px;font-size:11px;color:var(--mute);margin:0 0 6px">Line colour = status ${[['ok', 'OK'], ['fail', 'Fails']].map(([k, l]) => `<span style="display:inline-flex;align-items:center;gap:4px;color:var(--ink)"><i class="sw" style="background:${STC[k]}"></i>${l}</span>`).join('')}</div>`
     + LAYERS.map(([h, ls]) => `<div class="tnode lgh">${groupHead(h)}<div class="tkids">${ls.map(([k, l, on, s]) => row(k, l, on, s)).join('')}</div></div>`).join('');
   $$('#layers .lgh').forEach(wireLayerGroup); alignLayerRows($('#layers'));
 }
@@ -143,21 +142,50 @@ function boxObj(b, color, op, clip = true, edgeOp = 0.9) {
   m.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), new THREE.LineBasicMaterial({ color, transparent: true, opacity: edgeOp, clippingPlanes: clip ? CLIP : null })));
   return m;
 }
-function line(pts, color, w = 3, dashed = false, dash = 1, gap = 0.6) {
+function line(pts, color, w = 3, dashed = false, dash = 1, gap = 0.6, world = false) {   // world: w in metres instead of pixels
   const g = new LineGeometry(); g.setPositions(pts.flat());
-  const m = new LineMaterial({ color, linewidth: w, dashed, dashSize: dash, gapSize: gap, transparent: true, depthTest: false });
+  const m = new LineMaterial({ color, linewidth: w, dashed, dashSize: dash, gapSize: gap, transparent: true, depthTest: false, worldUnits: world });
   m.resolution.set(view.clientWidth || 800, view.clientHeight || 600); lineMats.push(m);
   const l = new Line2(g, m); l.computeLineDistances(); l.renderOrder = 6; return l;
 }
-function dots(pts, color, step = 0.55, r = 0.11) {
+function chain(a, b, color, w = 2, pat = [2, 0.5, 0.2, 0.5]) {   // dash-dot line (long dash, gap, short dash, gap), one segment set
+  const L = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) || 1, P = [], at = t => a.map((v, k) => v + (b[k] - v) * t / L);
+  for (let t = 0, i = 0; t < L; t += pat[i % 4], i++) if (i % 2 === 0) P.push(...at(t), ...at(Math.min(t + pat[i % 4], L)));
+  const g = new LineSegmentsGeometry(); g.setPositions(P);
+  const m = new LineMaterial({ color, linewidth: w, transparent: true, depthTest: false });
+  m.resolution.set(view.clientWidth || 800, view.clientHeight || 600); lineMats.push(m);
+  const l = new LineSegments2(g, m); l.renderOrder = 6; return l;
+}
+// split a route where it moves more than 0.5 m away from a reference polyline (the common path): [shared length m, rest]
+function leaveAt(pts, ref) {
+  if (!ref || ref.length < 2 || !pts || pts.length < 2) return [0, pts];
+  const sd = (q, a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / L2)) : 0; return Math.hypot(q[0] - a[0] - t * dx, q[1] - a[1] - t * dy); };
+  const off = q => { let m = Infinity; for (let n = 1; n < ref.length; n++) m = Math.min(m, sd(q, ref[n - 1], ref[n])); return m > 0.5; };
+  let acc = 0;
+  for (let n = 1; n < pts.length; n++) {
+    const a = pts[n - 1], b = pts[n], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    for (let t = 0; t <= L; t += 0.1) { const m = [a[0] + (b[0] - a[0]) * t / (L || 1), a[1] + (b[1] - a[1]) * t / (L || 1)]; if (off(m)) return [acc + t, [m, ...pts.slice(n)]]; }
+    acc += L;
+  }
+  return [acc, [pts[pts.length - 1]]];
+}
+function arrowsV(a, b, color, h = 0.5, r = 0.3) {   // vertical run of triangles (cones) pointing from a to b, one arrow height apart: up to the roof, down to the basement
+  const L = Math.abs(b[2] - a[2]), up = b[2] > a[2], n = Math.max(1, Math.round(L / (2 * h))), hh = L / n;   // hh = step = arrow + gap
+  const m = new THREE.InstancedMesh(new THREE.ConeGeometry(r, hh / 2, 12), new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true }), n);
+  const M = new THREE.Matrix4(), Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(up ? Math.PI / 2 : -Math.PI / 2, 0, 0)), S = new THREE.Vector3(1, 1, 1), V = new THREE.Vector3();
+  for (let i = 0; i < n; i++) m.setMatrixAt(i, M.compose(V.set(a[0], a[1], a[2] + (up ? 1 : -1) * (i + 0.5) * hh), Q, S));
+  m.renderOrder = 8; m.userData.poly = [a, b]; m.userData.polyStyle = up ? 'triU' : 'triD'; m.userData.polyN = n; return m;
+}
+function dots(pts, color, step = 0.55, r = 0.11, pair = 0) {   // pair > 0: two dots this far apart at every step (second exit path)
   const P = []; let carry = 0;
   for (let n = 1; n < pts.length; n++) {
     const a = pts[n - 1], b = pts[n], L = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
-    for (let t = carry; t <= L; t += step) P.push([a[0] + (b[0] - a[0]) * t / L, a[1] + (b[1] - a[1]) * t / L, a[2] + (b[2] - a[2]) * t / L]);
+    const at = t => [a[0] + (b[0] - a[0]) * t / L, a[1] + (b[1] - a[1]) * t / L, a[2] + (b[2] - a[2]) * t / L];
+    for (let t = carry; t <= L; t += step) { P.push(at(t)); if (pair && t + pair <= L) P.push(at(t + pair)); }
     carry = ((carry - L) % step + step) % step;
   }
   const m = new THREE.InstancedMesh(new THREE.SphereGeometry(r, 8, 6), new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true }), P.length);
-  const M = new THREE.Matrix4(); P.forEach((p, i) => m.setMatrixAt(i, M.makeTranslation(p[0], p[1], p[2]))); m.renderOrder = 8; m.userData.poly = pts; return m;
+  const M = new THREE.Matrix4(); P.forEach((p, i) => m.setMatrixAt(i, M.makeTranslation(p[0], p[1], p[2]))); m.renderOrder = 8; m.userData.poly = pts; m.userData.polyStyle = pair ? 'dots2' : 'dots'; return m;
 }
 function arrows(pts, color, step = 2.2, size = 0.55) {   // thin line with chevrons pointing to the exit
   const g = new THREE.Group(); g.add(line(pts, color, 1.6));
@@ -168,10 +196,11 @@ function arrows(pts, color, step = 2.2, size = 0.55) {   // thin line with chevr
   const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), Z = new THREE.Vector3(0, 0, 1), S1 = new THREE.Vector3(1, 1, 1);
   T.forEach((t, i) => m.setMatrixAt(i, M.compose(new THREE.Vector3(t[0], t[1], t[2]), Q.setFromAxisAngle(Z, t[3]), S1))); m.count = T.length; m.renderOrder = 7; g.add(m); return g;
 }
-function dim(a, b, z, color, w = 2, dashed = false) {   // dimension line: straight measurement with end ticks
+function dim(a, b, z, color, w = 2, dashed = false, op = 1) {   // dimension line: straight measurement with end ticks; dashed = 'chain' draws dash-dot; op: opacity
   const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1, nx = -dy / L * 0.8, ny = dx / L * 0.8;
-  const g = new THREE.Group(); g.add(line([[...a, z], [...b, z]], color, w, dashed, 1, 0.6));
+  const g = new THREE.Group(); g.add(dashed === 'chain' ? chain([...a, z], [...b, z], color, w) : line([[...a, z], [...b, z]], color, w, dashed, 3, 1));   // long dashes
   for (const p of [a, b]) g.add(line([[p[0] - nx, p[1] - ny, z], [p[0] + nx, p[1] + ny, z]], color, w + 1));
+  if (op < 1) g.traverse(o => { if (o.material) o.material.opacity = op; });
   return g;
 }
 function dot(p, color, r = 0.35) { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 8), new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true })); m.position.set(...p); m.renderOrder = 7; return m; }
@@ -185,6 +214,8 @@ function tag(txt, color = '#868e96', size = 1) {
 const RAMP = [[0, '#d3f9d8'], [0.5, '#ffe066'], [0.8, '#f76707'], [1, '#c92a2a'], [1.6, '#862e9c']].map(([t, c]) => [t, new THREE.Color(c)]);
 const ramp = t => { for (let n = 1; n < RAMP.length; n++) if (t <= RAMP[n][0]) { const [a, ca] = RAMP[n - 1], [b, cb] = RAMP[n]; return ca.clone().lerp(cb, (t - a) / (b - a)); } return RAMP[RAMP.length - 1][1].clone(); };
 const at = (s, x, y, z) => { s.position.set(x, y, z); return s; };
+// length labels sit at the middle of their line, turned to run along it like a dimension (placed in layoutTags)
+const along = (s, pts, z) => { s.userData.along = pts.map(p => [p[0], p[1]]); s.center.set(0.5, -0.25); const m = pts[Math.floor(pts.length / 2)]; s.position.set(m[0], m[1], z); return s; };
 const bctr = b => [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2];
 
 // ---------- static scene: slabs, programme, context ----------
@@ -242,40 +273,36 @@ function buildLS() {
   const pk = (o, pick) => { o.userData.pick = pick; o.userData.dyn = true; pickables.push(o); return o; };
   const lz = i => L[i].z;
   // flat footprint on each floor (vertical boxes are edge-on in plan views)
-  const plan = (layer, b, color, op, floors, pick) => { for (const i of floors) { const m = new THREE.Mesh(new THREE.PlaneGeometry(b[3] - b[0], b[4] - b[1]), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: op, depthWrite: false, side: THREE.DoubleSide }));
+  const plan = (layer, b, color, op, floors, pick, planOnly = false) => { for (const i of floors) { const m = new THREE.Mesh(new THREE.PlaneGeometry(b[3] - b[0], b[4] - b[1]), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: op, depthWrite: false, side: THREE.DoubleSide }));
     m.position.set((b[0] + b[3]) / 2, (b[1] + b[4]) / 2, L[i].z + 0.12); m.add(new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), new THREE.LineBasicMaterial({ color })));
-    put(dynG, layer, pick ? pk(m, pick) : m, i); } };
+    if (planOnly) m.userData.planOnly = 1; put(dynG, layer, pick ? pk(m, pick) : m, i); } };
   const flIn = b => L.map((l, i) => i).filter(i => b[2] <= L[i].z + 0.5 && b[5] >= L[i].z + 0.5);
   // floor labels with egress status
   R.rows.forEach(r => { const s = tag(`${r.name} +${r.z.toFixed(1)}  ${MARK[r.status]} ${fmt(r.occ)} occ`, STC[r.status], 1.3); s.center.set(1, 0); put(dynG, 'labels', at(s, bmin.x - 2, bmax.y + 2, r.z + 0.3), r.idx); });
   // occupant tags per zone
   R.rows.forEach(r => r.zones.forEach(z => { if (z.synthetic) return;
     put(dynG, 'occTags', at(tag(`${z.grp} · ${fmt(z.occ)}`, GRPCOL[z.grp] || '#999', 0.9), z.p[0], z.p[1], r.z + 2.2), r.idx); }));
-  // stairs, vestibules, standpipes
+  // stairs and vestibules (standpipes are on the MEP page)
   for (const s of R.stairs) {
     put(dynG, 'stairs', pk(boxObj(s.b, COLR.stair, 0.16), { type: 'stair', id: s.id }));
     const c = bctr(s.b);
     for (const i of s.floors) put(dynG, 'stairTags', at(tag(s.id, COLR.stair, 0.9), c[0], c[1], lz(i) + 1.0), i);
-    plan('stairs', s.b, COLR.stair, 0.35, s.floors, { type: 'stair', id: s.id });
+    plan('stairs', s.b, COLR.stair, 0.35, s.floors, { type: 'stair', id: s.id }, true);
     if (s.vest) { put(dynG, 'vest', pk(boxObj(s.vest.b, COLR.vest, 0.3), { type: 'lobby', id: s.vest.id })); plan('vest', s.vest.b, COLR.vest, 0.45, flIn(s.vest.b), { type: 'lobby', id: s.vest.id }); }
-    const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, s.top - s.bot, 8), new THREE.MeshStandardMaterial({ color: COLR.sp, clippingPlanes: CLIP }));
-    sp.rotation.x = Math.PI / 2; sp.position.set(s.b[0] + 0.35, s.b[1] + 0.35, (s.top + s.bot) / 2); put(dynG, 'standpipe', sp);
-    for (const i of s.floors) put(dynG, 'standpipe', dot([s.b[0] + 0.35, s.b[1] + 0.35, lz(i) + 1.2], COLR.sp, 0.22), i);
   }
-  // stairway to roof / roof manifold
+  // stairway to roof
   const roofZ = L[roofIdx].z, toRoof = R.stairs.filter(s => s.toRoof);
-  if (toRoof.length) for (const s of toRoof) { const c = bctr(s.b); put(dynG, 'roof', at(tag(`${s.id} → roof ✓`, STC.ok), c[0], c[1], roofZ + 1.5), roofIdx); put(dynG, 'manifold', dot([c[0], c[1], roofZ + 0.6], COLR.sp, 0.5), roofIdx); put(dynG, 'manifold', at(tag('Roof manifold', COLR.sp, 0.8), c[0] + 0.6, c[1], roofZ + 0.6), roofIdx); }
+  if (toRoof.length) for (const s of toRoof) { const c = bctr(s.b); put(dynG, 'roof', at(tag(`${s.id} → roof ✓`, STC.ok), c[0], c[1], roofZ + 1.5), roofIdx); }
   else {
     const s = [...R.stairs].sort((a, b) => b.top - a.top)[0];
     if (s) { const c = bctr(s.b);
-      put(dynG, 'roof', line([[c[0], c[1], s.top], [c[0], c[1], roofZ + 0.2]], STC.fail, 4, true), roofIdx);
-      put(dynG, 'roof', at(tag(`No stair to roof · ${s.id} stops at +${s.top.toFixed(1)}`, STC.fail), c[0], c[1], roofZ + 1.2), roofIdx);
-      put(dynG, 'manifold', at(tag('Roof manifold: no stair riser reaches the roof', STC.fail, 0.8), c[0], c[1], roofZ + 2.4), roofIdx); }
+      put(dynG, 'roof', arrowsV([c[0], c[1], s.top], [c[0], c[1], roofZ + 0.2], STC.fail), roofIdx);   // up arrows: the missing stair run to the roof
+      put(dynG, 'roof', at(tag(`No stair to roof · ${s.id} stops at +${s.top.toFixed(1)}`, STC.fail), c[0], c[1], roofZ + 1.2), roofIdx); }
   }
   // basement exits
   if (P.basementZ != null && P.basementZ < L[0].z - 1) {
     const toB = R.stairs.filter(s => s.toBase);
-    if (!toB.length) for (const s of R.stairs) { const c = bctr(s.b); put(dynG, 'base', line([[c[0], c[1], s.bot], [c[0], c[1], P.basementZ]], STC.fail, 4, true), -1); }
+    if (!toB.length) for (const s of R.stairs) { const c = bctr(s.b); put(dynG, 'base', arrowsV([c[0], c[1], s.bot], [c[0], c[1], P.basementZ], STC.fail), -1); }   // down arrows: the missing stair run to the basement
     const t = (P.mep?.tech || [])[0]?.bbox;
     put(dynG, 'base', at(tag(toB.length ? `Basement exits: ${toB.map(s => s.id).join(', ')}` : 'Basement: no exit stair in the model', toB.length ? STC.ok : STC.fail), t ? t[0] : bmin.x, t ? t[1] : bmin.y, P.basementZ + 1.5), -1);
   }
@@ -286,27 +313,27 @@ function buildLS() {
     for (const zn of r.zones) if (zn.path) {
       // path of travel: from the most remote point of the space to the nearest reachable exit
       // the common part is the solid line; the dots continue from where the two routes separate
-      if (zn.rpath?.length > 1) put(dynG, 'paths', dots(zn.rpath.map(q => [...q, z]), STC[zn.status], 0.525, 0.182), r.idx);
-      put(dynG, 'paths', dot([...zn.p, z], STC[zn.status], 0.35), r.idx);
-      const e = zn.path[zn.path.length - 1]; put(dynG, 'paths', at(tag(`travel ${fmt(zn.dist)} / ${zn.lim} ft → ${zn.stair}`, STC[zn.status], 0.8), e[0], e[1], z + 0.4), r.idx);
+      if (zn.rpath?.length > 1) put(dynG, 'paths', dots(zn.rpath.map(q => [...q, z]), STC[zn.status], 1.6, 0.182), r.idx);   // same rhythm as the second exit path: one dot per step there, two here
+      const tp = zn.rpath?.length > 1 ? zn.rpath : zn.path; put(dynG, 'paths', along(tag(`travel ${zn.rpath?.length > 1 && zn.cpet != null ? `${Math.round(zn.cpet)} + ${Math.round(zn.dist) - Math.round(zn.cpet)} = ` : ''}${fmt(zn.dist)} / ${zn.lim} ft → ${zn.stair}`, STC[zn.status], 0.8), tp, z + 0.4), r.idx);
       // common path of egress travel: the shared part before the routes to two exits separate
       if (zn.cpath?.length > 1) {
-        put(dynG, 'cpet', line(zn.cpath.map(q => [...q, z]), STC[zn.cpStatus], 4.9), r.idx);
-        const c = zn.cpath[zn.cpath.length - 1]; put(dynG, 'cpet', dot([...c, z + 0.05], STC[zn.cpStatus], 0.4), r.idx);
+        put(dynG, 'cpet', line(zn.cpath.map(q => [...q, z]), STC[zn.cpStatus], 0.364, false, 1, 0.6, true), r.idx);   // width = path-of-travel dot diameter (2 × 0.182 m)
+        const core = line(zn.cpath.map(q => [...q, z]), STC[zn.cpStatus], 1.5); core.userData.noExport = 1; put(dynG, 'cpet', core, r.idx);   // 1.5 px core: a world-width line thinner than ~2 px breaks up when zoomed out
       }
-      put(dynG, 'cpet', at(tag(`common path ${fmt(zn.cpet)} / ${zn.cpLim} ft${zn.oneExit ? ' (one exit)' : ''}`, STC[zn.cpStatus], 0.8), zn.p[0], zn.p[1], z + 1.3), r.idx);
-      if (zn.path2) { const st = zn.dist2 > zn.lim2 ? 'fail' : zn.dist2 > 0.8 * zn.lim2 ? 'warn' : 'ok';
-        put(dynG, 'travel2', arrows(zn.path2.map(q => [...q, z + 0.1]), STC[st]), r.idx);
-        const e2 = zn.path2[zn.path2.length - 1]; put(dynG, 'travel2', at(tag(`2nd exit ${fmt(zn.dist2)} / ${zn.lim2} ft → ${zn.stair2}`, STC[st], 0.75), e2[0], e2[1], z + 0.9), r.idx); }
+      { const cs = tag(`common path ${fmt(zn.cpet)} / ${zn.cpLim} ft${zn.oneExit ? ' (one exit)' : ''}`, STC[zn.cpStatus], 0.8); put(dynG, 'cpet', zn.cpath?.length > 1 ? along(cs, zn.cpath, z + 0.4) : at(cs, zn.p[0], zn.p[1], z + 1.3), r.idx); }
+      if (zn.path2) { const st = zn.dist2 > zn.lim2 ? 'fail' : 'ok';
+        const [sh, rest2] = leaveAt(zn.path2, zn.path), shFt = sh * 3.28084;   // drawn only where it leaves the first route (common path + path of travel), so they never overlap
+        if (rest2.length > 1) put(dynG, 'travel2', dots(rest2.map(q => [...q, z + 0.1]), STC[st], 1.6, 0.182, 0.525), r.idx);
+        const t2 = rest2.length > 1 ? rest2 : zn.path2; put(dynG, 'travel2', along(tag(`2nd exit ${shFt >= 0.5 ? `${Math.round(shFt)} + ${Math.round(zn.dist2) - Math.round(shFt)} = ` : ''}${fmt(zn.dist2)} / ${zn.lim2} ft → ${zn.stair2}`, STC[st], 0.75), t2, z + 0.4), r.idx); }
     }
     for (const c of r.cutDoors || []) put(dynG, 'cutdoor', at(tag(`${c.id}: door opens onto no floor`, STC.fail, 0.85), c.p[0], c.p[1], r.z + 0.6), r.idx);
     if (r.diagPts[0] && r.occ) {
-      put(dynG, 'sep', dim(r.diagPts[0], r.diagPts[1], z, '#868e96', 1.6, true), r.idx);
-      put(dynG, 'sep', at(tag(`diagonal ${fmt(r.diag)} ft × ${fmt(A.sepFraction, 2)} = ${fmt(r.sepReq)} ft`, '#868e96', 0.8), (r.diagPts[0][0] + r.diagPts[1][0]) / 2, (r.diagPts[0][1] + r.diagPts[1][1]) / 2, z + 0.6), r.idx);
+      put(dynG, 'sep', dim(r.diagPts[0], r.diagPts[1], z, '#868e96', 1.6, true, 0.5), r.idx);
+      put(dynG, 'sep', along(tag(`diagonal ${fmt(r.diag)} ft × ${fmt(A.sepFraction, 2)} = ${fmt(r.sepReq)} ft${r.grade ? ' between exterior exit doors (not in the model)' : ''}`, '#868e96', 0.8), r.diagPts, z + 0.6), r.idx);
       if (r.pair) {
         const st = r.st.sep, sc = st === 'info' ? '#868e96' : STC[st];   // grade floor: not checked, shown grey
-        put(dynG, 'sep', dim(r.pair.pts[0], r.pair.pts[1], z + 0.1, sc, 2.5), r.idx);
-        put(dynG, 'sep', at(tag(`${r.pair.ids.join('–')} ${fmt(r.sepEdge)} ft (edge)`, sc, 0.8), (r.pair.pts[0][0] + r.pair.pts[1][0]) / 2, (r.pair.pts[0][1] + r.pair.pts[1][1]) / 2, z + 1.5), r.idx);
+        put(dynG, 'sep', dim(r.pair.pts[0], r.pair.pts[1], z + 0.1, sc, 2.5, true, 0.5), r.idx);
+        put(dynG, 'sep', along(tag(`${r.pair.ids.join('–')} ${fmt(r.sepEdge)} ft (door to door)`, sc, 0.8), r.pair.pts, z + 0.6), r.idx);
       }
     }
     if (r.heat?.length) {   // walking distance to the nearest exit, coloured against the 150 ft Group A limit
@@ -332,7 +359,7 @@ function buildLS() {
   // elevators and lobbies
   for (const e of R.elevators) {
     put(dynG, 'elev', pk(boxObj(e.b, COLR.elev, 0.28), { type: 'elev', id: e.id }));
-    plan(e.fse ? 'fse' : 'elev', e.b, e.fse ? COLR.fse : COLR.elev, 0.35, e.floors, { type: 'elev', id: e.id });
+    plan(e.fse ? 'fse' : 'elev', e.b, e.fse ? COLR.fse : COLR.elev, 0.35, e.floors, { type: 'elev', id: e.id }, true);   // shaft is continuous; floor footprints only in single-floor views
     if (e.fse) put(dynG, 'fse', boxObj([e.b[0] - 0.08, e.b[1] - 0.08, e.b[2], e.b[3] + 0.08, e.b[4] + 0.08, e.b[5]], COLR.fse, 0.05, true, 1));
     const c = bctr(e.b);
     put(dynG, 'elev', at(tag(`${e.id} ${e.kind[0].toUpperCase()}`, COLR.elev, 0.75), c[0], c[1], e.top + 0.5));
@@ -341,10 +368,6 @@ function buildLS() {
   if (fse.length) { const b = fse.map(e => e.b), c = [Math.min(...b.map(x => x[0])), Math.min(...b.map(x => x[1]))];
     for (const i of fse[0].floors) put(dynG, 'fse', at(tag(`FSE candidate ${fse.map(e => e.id).join('/')}`, COLR.fse, 0.85), c[0], c[1] - 1.5, L[i].z + 1.8), i); }
   for (const l of R.lobbies) if (l.role === 'elevator lobby') { put(dynG, 'elobby', pk(boxObj(l.b, COLR.elobby, 0.22), { type: 'lobby', id: l.id })); plan('elobby', l.b, COLR.elobby, 0.35, flIn(l.b), { type: 'lobby', id: l.id }); }
-  // fire command center placeholder at grade (lobby volume, else slab centre)
-  { const v = P.volumes.find(q => q.floor === 0 && q.cat === 'lobby'); const c = v ? v.c : [center.x, center.y];
-    put(dynG, 'fcc', boxObj([c[0] - 1.5, c[1] - 1.5, L[0].z, c[0] + 1.5, c[1] + 1.5, L[0].z + 3], COLR.fcc, 0.12, false), 0);
-    put(dynG, 'fcc', at(tag('FCC? location TBD (FDNY approval)', COLR.fcc, 0.8), c[0] + 1.6, c[1], L[0].z + 3.2), 0); }
   // atrium / immersive
   for (const v of P.volumes) {
     const r = R.rows[v.floor], vo = volObj[v.id]; if (!vo) continue;
@@ -365,7 +388,8 @@ function applyVis() {
     const k = o.userData.layer; let v = !!lay[k] && onFl(o.userData.fl);
     if (k === 'occ') v = v && gr[o.userData.grp] !== false;
     if (k === 'shell') v = v && floorSel < 0;
-    if (o.isSprite && floorSel === -1 && DETAIL_TAGS.has(k)) v = false;   // per-floor tags only in single-floor views
+    if (o.isSprite && floorSel === -1 && DETAIL_TAGS.has(k)) v = false;
+    if (o.userData.planOnly && floorSel === -1) v = false;   // per-floor tags only in single-floor views
     // explode: each floor's objects rise by floor × spacing; full-height objects (cores, stair and elevator shafts) hide, as on the MEP page
     const fl = o.userData.fl; if (o.userData.z0 === undefined) o.userData.z0 = o.position.z;
     o.position.z = o.userData.z0 + (fl == null ? 0 : fl * explode);
@@ -413,10 +437,15 @@ addEventListener('resize', resize);
   side('lgrip', '--lw', 'ls.lw', 220, x => x, '--rw');
   side('rgrip', '--rw', 'ls.rw', 300, x => innerWidth - x, '--lw');
 }
+// B1: fit the plan to the basement technical rooms (the basement has no floor plate in the model)
+const B1T = P.mep?.tech || [], B1B = B1T.length ? [Math.min(...B1T.map(t => t.bbox[0])), Math.min(...B1T.map(t => t.bbox[1])), Math.max(...B1T.map(t => t.bbox[3])), Math.max(...B1T.map(t => t.bbox[4]))] : null;
+const b1Centre = z => B1B ? new THREE.Vector3((B1B[0] + B1B[2]) / 2, (B1B[1] + B1B[3]) / 2, z) : new THREE.Vector3(center.x, center.y, z);
+const b1Zoom = () => B1B ? 0.7 * Math.min(2 * ocam.right / (B1B[2] - B1B[0] + 1), 2 * ocam.top / (B1B[3] - B1B[1] + 1)) : 1;
 function setView(v) {
   const dirs = { iso: [-1, -1.15, 0.85], iso2: [1.1, -1, 0.8], top: [0, -0.001, 1], front: [0, -1, 0.02], side: [1, 0, 0.02] };
   const d = new THREE.Vector3(...dirs[v]).normalize();
-  let tgt = floorSel === -2 ? new THREE.Vector3(center.x, center.y, (P.basementZ ?? 0) - explode) : center.clone().add(new THREE.Vector3(0, 0, explode * L.length / 2)), zoom = 1;
+  let tgt = floorSel === -2 ? b1Centre((P.basementZ ?? 0) - explode) : center.clone().add(new THREE.Vector3(0, 0, explode * L.length / 2)), zoom = 1;
+  if (floorSel === -2 && v === 'top') zoom = b1Zoom();
   if (floorSel >= 0) {   // fit the floor plate
     const xs = [], ys = []; for (const t of L[floorSel].tris) for (let k = 0; k < 6; k += 2) { xs.push(t[k]); ys.push(t[k + 1]); }
     const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), s = radius * 1.1, asp = view.clientWidth / view.clientHeight;
@@ -440,7 +469,7 @@ controls.addEventListener('change', () => { if (viewDir && camera.position.clone
 function setProj(o) { ortho = o; const p = camera.position.clone(), t = controls.target.clone(); camera = o ? ocam : pcam; camera.position.copy(p); controls.object = camera; controls.target.copy(t); controls.update(); $('#bProj').textContent = o ? 'Ortho' : 'Perspective'; $('#bProj').classList.add('on'); }
 $('#floorSel').innerHTML = '<option value="-1">All floors</option><option value="-2">B1 · basement</option>' + L.map((l, i) => `<option value="${i}">${flName(i)} · +${l.z.toFixed(1)}</option>`).join('');
 $('#explode').oninput = e => { explode = +e.target.value; applyVis(); };
-const setFloor = i => { floorSel = i; $('#floorSel').value = i; applyVis(); setView(i === -1 ? 'iso' : i === -2 ? 'iso2' : 'top'); renderPane(); };
+const setFloor = i => { floorSel = i; $('#floorSel').value = i; applyVis(); setView(i === -1 ? 'iso' : 'top'); renderPane(); };
 $('#floorSel').onchange = e => setFloor(+e.target.value);
 $$('[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
 $('#bProj').onclick = () => setProj(!ortho);
@@ -493,11 +522,10 @@ function kpis() {
     ['travel', 'Egress', `${zs.filter(z => z.status === 'ok').length} / ${zs.length}`, 'Spaces within the path of travel limit', worstSt(zs.map(z => z.status))],
     ['cpet', 'Egress', `${zs.filter(z => z.cpStatus === 'ok').length} / ${zs.length}`, 'Spaces within the common path limit', worstSt(zs.map(z => z.cpStatus))],
     ['reach', 'Egress', `${cutN}`, `Stair doors opening onto no floor${ur ? ` · ${fmt(ur)} m² with no route` : ''}`, cutN || ur ? 'fail' : 'ok'],
-    ['hr', 'High-rise and fire protection', `${fmt(R.hf)} ft`, 'Top occupied floor above lowest level', item('hr')?.status || 'ok'],
+    ['hr', 'High-rise', `${fmt(R.hf)} ft`, 'Top occupied floor above lowest level', item('hr')?.status || 'ok'],
     ['fse', 'Vertical transport', fse.length ? fse.map(e => e.id).join('/') : (detailState < 2 ? '…' : 'none'), 'Fire service access elevator (candidates)', item('fse')?.status || 'info'],
     ['roof', 'Vertical transport', toRoof.length ? toRoof.map(s => s.id).join(', ') : 'none', 'Stairway to roof', item('roof')?.status || 'ok'],
-    ['sp', 'High-rise and fire protection', `${R.stairs.length}`, 'Standpipes (one per exit stair)', item('roof')?.status === 'fail' ? 'warn' : 'ok'],
-    ['haz', 'High-rise and fire protection', `${R.rows.filter(r => r.multi.length).length} storeys`, 'Atrium · special amusement · mixed occupancy', 'warn'],
+    ['haz', 'High-rise', `${R.rows.filter(r => r.multi.length).length} storeys`, 'Atrium · special amusement · mixed occupancy', 'info'],
   ];
 }
 function kpiInfo(k) {
@@ -514,11 +542,11 @@ function kpiInfo(k) {
       `per stair = clear width ÷ factor = ${A.stairClearIn} in ÷ ${A.stairFactor} = ${fmt(R.capPer)} occupants\n` + ln(rows.map(r => `${r.name}: ${r.stairs.length} × ${fmt(R.capPer)} = ${fmt(r.cap)} vs ${fmt(r.occ)} occ → needs ${fmt(r.capReqIn, 1)} in total${r.stairs.length ? ` (${fmt(r.capReqIn / r.stairs.length, 1)} in per stair)` : ''} ${MARK[r.st.cap]}`)),
       'Stair clear width is not readable from the model; set it under Assumptions.'],
     sep: ['Exit separation', 'NYC BC §1007.1.1 Exception 2 (sprinklered: ⅓ of the maximum overall diagonal of the area served)',
-      `required = diagonal × ${fmt(A.sepFraction, 3)}; provided = clear gap between the two farthest stair enclosures (edge), centre-to-centre in brackets\n` + ln(rows.map(r => `${r.name}: ${fmt(r.diag)} ft × ${fmt(A.sepFraction, 2)} = ${fmt(r.sepReq)} · ${r.pair ? r.pair.ids.join('–') : '—'} ${fmt(r.sepEdge)} (${fmt(r.sepCtr)}) ft ${r.st.sep === 'warn' ? '! only centre-to-centre' : MARK[r.st.sep]}`)),
+      `required = diagonal × ${fmt(A.sepFraction, 3)}; provided = straight line between the doors of the two farthest exits (stair door, or vestibule door where there is one), stair centre-to-centre in brackets\n` + ln(rows.map(r => `${r.name}: ${fmt(r.diag)} ft × ${fmt(A.sepFraction, 2)} = ${fmt(r.sepReq)} · ${r.pair ? r.pair.ids.join('–') : '—'} ${fmt(r.sepEdge)} (${fmt(r.sepCtr)}) ft ${r.st.sep === 'warn' ? '! only centre-to-centre' : MARK[r.st.sep]}`)),
       'The code measures between exit doors; door positions are not in the model, so the edge gap is the conservative reading and the centre gap the optimistic one.'],
     travel: ['Exit access travel distance (path of travel)', 'NYC BC §1017.2, Table 1017.2 (B 300, M 200 ft sprinklered); Group A per §1029.7, Table 1029.7 (primary 150, secondary 250 ft sprinklered); atrium §404.9.3',
       'from the most remote point of each occupied space, walking on the floor plate to the nearest reachable stair door: around walls (cut at +1.0 m), through openings, never over voids\n' + ln(rows.flatMap(r => r.zones.map(z => `${r.name} ${z.cat} (${z.grp}): ${fmt(z.dist)} / ${z.lim} ft → ${z.stair || '–'}${z.lim2 ? ` · 2nd exit ${fmt(z.dist2)} / ${z.lim2} ft` : ''} ${MARK[z.status]}`))),
-      'Rooms in the programme model have no walls or doors yet, so routes leave a space wherever it meets the floor. Above 80 % of the limit is flagged.'],
+      'Rooms in the programme model have no walls or doors yet, so routes leave a space wherever it meets the floor.'],
     cpet: ['Common path of egress travel', 'NYC BC §1006.2.1, Table 1006.2.1 (sprinklered: A and M 75 ft, B 100 ft; column reading to verify); dead ends §1020.4',
       'from the same most remote point: the length of the route to the nearest exit that is shared with the route to a second, different exit (they separate where the purple line ends); one reachable exit = the whole route is common\n' + ln(rows.flatMap(r => r.zones.map(z => `${r.name} ${z.cat} (${z.grp}): ${fmt(z.cpet)} / ${z.cpLim} ft${z.oneExit ? ' (one exit reachable)' : ''} ${MARK[z.cpStatus]}`))),
       'Dead-end corridors (§1020.4) need corridors in the model and are not computed yet.'],
@@ -533,9 +561,6 @@ function kpiInfo(k) {
       item('fse')?.detail],
     roof: ['Stairway to roof', 'NYC BC §1011.12; Appendix Q (NFPA 14 §7.3.2.1 roof manifold)',
       ln(R.stairs.map(s => `${s.id}: +${s.bot.toFixed(1)} → +${s.top.toFixed(1)} m ${s.toRoof ? '✓ reaches the roof' : `✕ roof at +${L[roofIdx].z.toFixed(1)}`}`)), item('roof')?.detail],
-    sp: ['Standpipes', 'NYC BC §905.3.1; Appendix Q (NFPA 14)',
-      `one standpipe in each exit stair, hose valve at every floor landing: ${R.stairs.length} standpipes\nflow, pressure and fire pump are sized on the MEP page`,
-      'Positions in the stairs are schematic.'],
     haz: ['Atrium, special amusement, mixed occupancy', 'NYC BC §404, §411.1, §508.4',
       ln(['atr', 'imm', 'mix'].map(item).filter(Boolean).map(i => `${i.item}: ${i.detail}`)), ''],
   }[k];
@@ -543,7 +568,7 @@ function kpiInfo(k) {
   return `<div class="kinfo"><button class="x" data-kx title="Close">✕</button><h4>${I[0]}</h4><div class="code">${I[1]}</div>${quotes(k)}<div class="f">${esc(I[2])}</div>${I[3] ? `<p>${esc(I[3])}</p>` : ''}</div>`;
 }
 // cards are grouped under text headings; the left bar colour is the status (legend above the cards)
-const STL = { ok: 'OK', warn: 'Check', fail: 'Fails', info: 'Info' };
+const STL = { ok: 'OK', fail: 'Fails', info: 'Info' };   // no 'Check' status on this page
 const card = ([k, , v, l, st]) => `<div class="kpi s-${st}${kpiSel === k ? ' sel' : ''}" data-k="${k}" title="${STL[st]}"><b>${v}</b><small>${l}</small></div>`;
 function renderPane() {
   const pane = $('#pane'); if (!R) return;
@@ -565,7 +590,7 @@ function renderPane() {
   } else if (tab === 'flo') {
     const f = floorSel >= 0 ? R.rows[floorSel] : null;
     pane.innerHTML = `<div style="overflow-x:auto"><table><thead><tr><th>Floor</th><th>ft</th><th>Occ</th><th>Groups</th><th>Exits req/prov</th><th>Stairs reached</th><th>Cap occ/cap</th><th>⅓ diag</th><th>Sep edge (ctr)</th><th>Travel / lim</th><th>Common path / lim</th><th>2nd / lim</th></tr></thead><tbody>
-    ${R.rows.map(r => `<tr data-f="${r.idx}" class="${floorSel === r.idx ? 'sel' : ''}"><td>${pill(r.status)} ${r.name}</td><td>${fmt(r.ft)}</td><td>${fmt(r.occ)}</td><td>${r.groups.join('/') || '–'}</td><td class="${r.st.exits}">${r.req} / ${r.nExits}</td><td style="text-align:left">${r.stairs.join(' ') || '–'}${r.cut.length ? ` <span style="color:var(--fail)">✕ ${r.cut.join(' ')}</span>` : ''}</td><td class="${r.st.cap}">${fmt(r.occ)} / ${fmt(r.cap)}</td><td>${fmt(r.sepReq)}</td><td class="${r.st.sep}">${fmt(r.sepEdge)} (${fmt(r.sepCtr)})</td><td class="${r.st.travel}">${fmt(r.travel)} / ${r.lim1}</td><td class="${r.st.cpet}">${fmt(r.cpet)} / ${r.cpLim}</td><td>${r.lim2 ? `${fmt(r.travel2)} / ${r.lim2}` : '–'}</td></tr>`).join('')}
+    ${R.rows.map(r => `<tr data-f="${r.idx}" class="${floorSel === r.idx ? 'sel' : ''}"><td>${pill(r.status)} ${r.name}</td><td>${fmt(r.ft)}</td><td>${fmt(r.occ)}</td><td>${r.groups.join('/') || '–'}</td><td class="${r.st.exits}">${r.req} / ${r.nExits ?? '–'}</td><td style="text-align:left">${r.stairs.join(' ') || '–'}${r.cut.length ? ` <span style="color:var(--fail)">✕ ${r.cut.join(' ')}</span>` : ''}</td><td class="${r.st.cap}">${fmt(r.occ)} / ${fmt(r.cap)}</td><td>${fmt(r.sepReq)}</td><td class="${r.st.sep}">${fmt(r.sepEdge)} (${fmt(r.sepCtr)})</td><td class="${r.st.travel}">${fmt(r.travel)} / ${r.lim1}</td><td class="${r.st.cpet}">${fmt(r.cpet)} / ${r.cpLim}</td><td>${r.lim2 ? `${fmt(r.travel2)} / ${r.lim2}` : '–'}</td></tr>`).join('')}
     </tbody></table></div>
     <h3 style="font-size:12px;margin:14px 0 6px">Zones ${f ? f.name : '(click a floor row)'}</h3>
     ${f ? `<table><tr><th>Zone</th><th>Type</th><th>Group</th><th>m²</th><th>Occ</th><th>Exit</th><th>Travel / lim</th><th>Common / lim</th><th>2nd / lim</th></tr>${f.zones.map(z => `<tr><td>${z.id}</td><td>${z.cat}</td><td>${z.grp}</td><td>${fmt(z.area)}</td><td>${fmt(z.occ)}</td><td>${z.stair || '–'}</td><td class="${z.status}">${fmt(z.dist)} / ${z.lim}</td><td class="${z.cpStatus}">${fmt(z.cpet)} / ${z.cpLim}</td><td>${z.lim2 ? `${fmt(z.dist2)} / ${z.lim2}` : '–'}</td></tr>`).join('')}</table>
@@ -595,7 +620,7 @@ function renderPane() {
     else if (p.type === 'lobby') { const l = R.lobbies.find(x => x.id === p.id); h = `${l.role[0].toUpperCase() + l.role.slice(1)} ${l.id}`;
       rows = [['Plan (m)', `${(l.b[3] - l.b[0]).toFixed(2)} × ${(l.b[4] - l.b[1]).toFixed(2)} = ${((l.b[3] - l.b[0]) * (l.b[4] - l.b[1])).toFixed(1)} m²`], ['Bottom / top', `+${l.b[2].toFixed(2)} / +${l.b[5].toFixed(2)} m`], ['Serves', l.role === 'vestibule' ? R.stairs.find(s => s.vest?.id === l.id)?.id : R.elevators.filter(e => e.lobby === l.id).map(e => e.id).join(', ')]]; }
     else if (p.type === 'zone') { const v = P.volumes.find(x => x.id === p.id), r = R.rows[v.floor], z = r.zones.find(q => q.id === v.id) || {}; h = C[v.cat]?.label || v.cat;
-      rows = [['Volume', v.id], ['Floor', r.name], ['Occupancy group', grpOf(v.cat)], ['Area', `${fmt(v.area)} m² (${fmt(v.area * M2FT2)} ft²)`], ['Occupants', fmt(z.occ)], ['Height', `+${v.zmin.toFixed(1)} → +${v.zmax.toFixed(1)} m${r.multi.includes(v.cat) ? ' (multi-storey)' : ''}`], ['Nearest stair', z.stair ? `${z.stair}, ${fmt(z.dist)} ft (limit ${z.lim})` : 'none'], ['Special', v.cat === 'immersive' ? '§411 special amusement if the exit path is not readily apparent' : v.cat === 'auditorium' ? 'fixed seats §1004.3, aisles §1029' : '–']]; }
+      rows = [['Volume', v.id], ['Floor', r.name], ['Occupancy group', grpOf(v.cat)], ['Area', `${fmt(v.area)} m² (${fmt(v.area * M2FT2)} ft²)`], ['Occupants', fmt(z.occ)], ['Height', `+${v.zmin.toFixed(1)} → +${v.zmax.toFixed(1)} m${r.multi.includes(v.cat) ? ' (multi-storey)' : ''}`], ['Nearest stair', r.grade ? 'grade floor: exits are the exterior doors (not in the model)' : z.stair ? `${z.stair}, ${fmt(z.dist)} ft (limit ${z.lim})` : 'none'], ['Special', v.cat === 'immersive' ? '§411 special amusement if the exit path is not readily apparent' : v.cat === 'auditorium' ? 'fixed seats §1004.3, aisles §1029' : '–']]; }
     pane.innerHTML = `<h3 style="margin:0 0 8px;font-size:14px">${esc(h)}</h3><div class="kv">${rows.map(([k, v]) => `<div>${k}</div><div>${esc(v ?? '–')}</div>`).join('')}</div><button class="btn" style="margin-top:12px" id="bDesel">Clear</button>`;
     $('#bDesel').onclick = () => select(null);
   }
@@ -615,19 +640,21 @@ function regen() {
 const toast = m => { const t = $('#toast'); t.textContent = m; t.style.opacity = 1; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.opacity = 0, 2600); };
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
 function download(name, data, type) { const b = data instanceof Blob ? data : new Blob([data], { type }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
-function exportPNG(w, h) {
-  const max = renderer.capabilities.maxTextureSize; if (w > max) { h = Math.round(h * max / w); w = max; }
+// renders rect (screen px of the view, may reach beyond it) at w × h with a transparent background (export dialog)
+function renderImage(w, h, rect) {
+  const max = renderer.capabilities.maxTextureSize; if (w > max) { h = Math.round(h * max / w); w = max; } if (h > max) { w = Math.round(w * max / h); h = max; }
   const vw = view.clientWidth, vh = view.clientHeight, pr = renderer.getPixelRatio();
   renderer.setPixelRatio(1); renderer.setSize(w, h, false); lineMats.forEach(m => m.resolution.set(w, h));
-  if (camera === pcam) { pcam.aspect = w / h; pcam.updateProjectionMatrix(); } else { const hh = (ocam.top - ocam.bottom) / 2; ocam.left = -hh * w / h; ocam.right = hh * w / h; ocam.updateProjectionMatrix(); }
-  scaleTags(vh); renderer.render(scene, camera);
-  renderer.domElement.toBlob(b => download(`2GBX_LifeSafety_${selName()}_${w}x${h}_${stamp()}.png`, b), 'image/png');
+  camera.setViewOffset(vw, vh, rect.x, rect.y, rect.w, rect.h);
+  scaleTags(vh); const bg = scene.background; scene.background = null; renderer.setClearColor(0x000000, 0); renderer.render(scene, camera); scene.background = bg; camera.clearViewOffset();
+  const out = document.createElement('canvas'); out.width = w; out.height = h; out.getContext('2d').drawImage(renderer.domElement, 0, 0);
   renderer.setPixelRatio(pr); renderer.setSize(vw, vh, false); renderer.domElement.style.width = vw + 'px'; renderer.domElement.style.height = vh + 'px'; resize();
-  toast(`PNG ${w}×${h} exported`);
+  return out;
 }
 const selName = () => floorSel === -1 ? 'ALL' : floorSel === -2 ? 'B1' : flName(floorSel);
-$('#bPng').onclick = () => exportPNG(3840, 2160);
-$('#bPng8').onclick = () => exportPNG(7680, 4320);
+$('#bPng').onclick = () => VT.openExport('png4');
+$('#bSvg').onclick = () => VT.openExport('svg');
+$('#bPng8').onclick = () => VT.openExport('png8');
 // Rhino / OBJ: what is visible now, one layer per layer-list entry (LS::group::layer); tags become text dots in Rhino
 const LPATH = Object.fromEntries(LAYERS.flatMap(([g, ls]) => ls.map(([k, l]) => [k, `LS::${g.replace(/&/g, 'and')}::${l.replace(/\s*\(.*\)/, '').replace(/ \+ /g, ' and ')}`])));
 const visItems = () => { const ex = explode; if (ex) { explode = 0; const vis = []; for (const g of [statG, dynG]) for (const o of g.children) vis.push(o.visible); applyVis(); let n = 0; for (const g of [statG, dynG]) for (const o of g.children) o.visible = vis[n++]; } const items = collectItems(); if (ex) { explode = ex; applyVis(); } return items; };
@@ -646,7 +673,7 @@ $('#bObj').onclick = () => {
 };
 $('#bCsv').onclick = () => {
   const H = ['floor', 'elev_m', 'height_ft', 'occupants', 'groups', 'exits_required', 'exits_provided', 'stairs', 'stair_capacity', 'diagonal_ft', 'sep_required_ft', 'sep_edge_ft', 'sep_centre_ft', 'travel_ft', 'travel_limit_ft', 'second_exit_ft', 'second_limit_ft', 'status'];
-  const rows = R.rows.map(r => [r.name, r.z, r.ft.toFixed(0), r.occ, r.groups.join('/'), r.req, r.nExits, r.stairs.join(' '), Math.round(r.cap), r.diag.toFixed(0), r.sepReq.toFixed(0), r.sepEdge.toFixed(0), r.sepCtr.toFixed(0), r.travel?.toFixed(0) ?? '', r.lim1, r.travel2?.toFixed(0) ?? '', r.lim2 ?? '', r.status]);
+  const rows = R.rows.map(r => [r.name, r.z, r.ft.toFixed(0), r.occ, r.groups.join('/'), r.req, r.nExits ?? '', r.stairs.join(' '), r.cap == null ? '' : Math.round(r.cap), r.diag.toFixed(0), r.sepReq.toFixed(0), r.sepEdge?.toFixed(0) ?? '', r.sepCtr?.toFixed(0) ?? '', r.travel?.toFixed(0) ?? '', r.lim1, r.travel2?.toFixed(0) ?? '', r.lim2 ?? '', r.status]);
   download(`2GBX_LifeSafety_${stamp()}.csv`, [H, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n'), 'text/csv');
 };
 $('#bJson').onclick = () => download(`2GBX_LifeSafety_${stamp()}.json`, JSON.stringify({ project: P.name, assumptions: Object.fromEntries(AF.map(([k]) => [k, A[k]])), ...R }, null, 1), 'application/json');
@@ -667,4 +694,79 @@ function placeLabels(list) {
   const px = best[0] + Math.sign(best[0] - center.x) * 2, py = best[1] + Math.sign(best[1] - center.y) * 2;
   for (const s of list) { s.position.x = px; s.position.y = py; }
 }
-renderer.setAnimationLoop(() => { controls.update(); placeLabels(dynG.children.filter(o => o.userData.layer === 'labels')); scaleTags(); renderer.render(scene, camera); });
+// annotation tags: each tag sits next to the point it describes, on whichever side (of 8 around it) covers the least of
+// the drawing and of the tags already placed. No leaders. The tag keeps its 3D anchor; only its screen offset (sprite centre) changes.
+// The layout is recomputed only when the view, floor or layers change.
+let tagKey = '';
+const _a = new THREE.Vector3(), _b = new THREE.Vector3();
+function layoutTags() {
+  const VW = view.clientWidth, VH = view.clientHeight;
+  const key = camera.matrixWorld.elements.map(v => v.toFixed(3)).join() + camera.zoom.toFixed(4) + VW + 'x' + VH + floorSel + explode + root.children.map(g => g.children.filter(o => o.visible).length).join();
+  if (key === tagKey) return; tagKey = key;
+  const toS = v => [(v.x + 1) / 2 * VW, (1 - v.y) / 2 * VH];
+  const shown = o => { for (let p = o; p; p = p.parent) if (!p.visible) return false; return true; };
+  // drawing to keep clear: route, dimension and wall segments, stair / lift / lobby boxes (screen space)
+  const segs = [], boxes = [];
+  const pt = (x, y, z) => toS(_b.set(x, y, z).project(camera));
+  for (const g of [statG, dynG]) for (const o of g.children) { if (!shown(o) || o.isSprite) continue;
+    o.traverse(c => { if (!shown(c)) return; c.updateMatrixWorld();
+      if (c.userData.poly) { const P = c.userData.poly; for (let n = 1; n < P.length; n++) segs.push([...pt(...P[n - 1]), ...pt(...P[n])]); return; }
+      if (c.isLineSegments2) { const st = c.geometry.attributes.instanceStart, en = c.geometry.attributes.instanceEnd; if (!st) return;
+        for (let n = 0; n < st.count && segs.length < 6000; n++) { _a.set(st.getX(n), st.getY(n), st.getZ(n)).applyMatrix4(c.matrixWorld); const A = toS(_a.project(camera)); _a.set(en.getX(n), en.getY(n), en.getZ(n)).applyMatrix4(c.matrixWorld); segs.push([...A, ...toS(_a.project(camera))]); } return; }
+      if (c.isMesh && !c.isInstancedMesh && c.geometry?.type === 'BoxGeometry') { c.geometry.computeBoundingBox(); const bb = c.geometry.boundingBox, r = [Infinity, Infinity, -Infinity, -Infinity];
+        for (const x of [bb.min.x, bb.max.x]) for (const y of [bb.min.y, bb.max.y]) for (const z of [bb.min.z, bb.max.z]) { const [sx, sy] = toS(_a.set(x, y, z).applyMatrix4(c.matrixWorld).project(camera)); r[0] = Math.min(r[0], sx); r[1] = Math.min(r[1], sy); r[2] = Math.max(r[2], sx); r[3] = Math.max(r[3], sy); }
+        if ((r[2] - r[0]) * (r[3] - r[1]) < VW * VH * 0.25) boxes.push(r); } }); }
+  const hits = (x0, y0, x1, y1, s) => {   // segment s crosses rectangle (Liang-Barsky)
+    let t0 = 0, t1 = 1; const dx = s[2] - s[0], dy = s[3] - s[1];
+    for (const [p, q] of [[-dx, s[0] - x0], [dx, x1 - s[0]], [-dy, s[1] - y0], [dy, y1 - s[1]]]) { if (p === 0) { if (q < 0) return false; } else { const r = q / p; if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; } } }
+    return true; };
+  const ov = (a, b) => Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+  // placed labels are kept as quads (4 screen corners) so that turned labels are tested exactly, not by their bounding box
+  const quad = (cx, cy, w, h, ang) => { const c = Math.cos(ang), s2 = Math.sin(ang), ux = c, uy = -s2, vx = -s2, vy = -c;   // u: along the text, v: its 'up' (screen y down)
+    return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [cx + ux * a * w / 2 + vx * b * h / 2, cy + uy * a * w / 2 + vy * b * h / 2]); };
+  const rq = r => [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
+  const sep = (A, B) => { for (const P of [A, B]) for (let i = 0; i < 4; i++) { const p = P[i], q = P[(i + 1) % 4], nx2 = q[1] - p[1], ny2 = p[0] - q[0];
+      let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity; for (const t of A) { const d = t[0] * nx2 + t[1] * ny2; a0 = Math.min(a0, d); a1 = Math.max(a1, d); }
+      for (const t of B) { const d = t[0] * nx2 + t[1] * ny2; b0 = Math.min(b0, d); b1 = Math.max(b1, d); } if (a1 <= b0 + 1e-6 || b1 <= a0 + 1e-6) return true; } return false; };
+  const touch = (A, B) => !sep(A, B);
+  const placed = [];
+  for (const g of [statG, dynG]) for (const o of g.children) if (o.isSprite && o.userData.along && shown(o)) {   // length labels: middle of the line, along it
+    const P = o.userData.along; let L = 0; for (let n = 1; n < P.length; n++) L += Math.hypot(P[n][0] - P[n - 1][0], P[n][1] - P[n - 1][1]);
+    let acc = 0, n = 1; for (; n < P.length; n++) { const l = Math.hypot(P[n][0] - P[n - 1][0], P[n][1] - P[n - 1][1]); if (acc + l >= L / 2) break; acc += l; }
+    n = Math.min(n, P.length - 1); const a = P[n - 1], b = P[n], l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, t = (L / 2 - acc) / l;
+    o.position.x = a[0] + (b[0] - a[0]) * t; o.position.y = a[1] + (b[1] - a[1]) * t;
+    o.updateMatrixWorld(); o.getWorldPosition(_a); const zz = _a.z, pa = toS(_b.set(a[0], a[1], zz).project(camera)), pb = toS(_b.set(b[0], b[1], zz).project(camera));
+    let ang = Math.atan2(-(pb[1] - pa[1]), pb[0] - pa[0]); if (ang > Math.PI / 2) ang -= Math.PI; if (ang < -Math.PI / 2) ang += Math.PI;
+    if (Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) < 2) ang = 0;   // line seen end-on: keep the label level
+    o.material.rotation = ang; o.userData.off = null;
+    // where two length labels would overlap (routes sharing a corridor), the later one steps off the line: above, below, further out
+    const [cx, cy] = toS(_a.project(camera)), w = o.userData.px * o.userData.asp, h = o.userData.px, ca = Math.abs(Math.cos(ang)), sa = Math.abs(Math.sin(ang));
+    const nx = -Math.sin(ang), ny = -Math.cos(ang), hw = (w * ca + h * sa) / 2, hh = (w * sa + h * ca) / 2;   // n: screen 'up' of the text
+    // candidates: on the line, then stepped off it (above / below) and slid along it; the one touching the fewest placed labels wins
+    let pick = null, pc = Infinity; const ux = Math.cos(ang), uy = -Math.sin(ang);
+    for (const sl of [0, 0.6, -0.6]) for (const cyv of [-0.25, -1.45, 1.35, -2.65, 2.55]) {
+      const k = (0.5 - cyv) * h, r = quad(cx + nx * k + ux * sl * w, cy + ny * k + uy * sl * w, w, h, ang), n = placed.filter(p => touch(p, r)).length;
+      if (n < pc) { pc = n; pick = [sl, cyv, r]; } if (!n) break; }
+    o.center.set(0.5 - pick[0], pick[1]); placed.push(pick[2]); }
+  for (const g of [statG, dynG]) for (const o of g.children) if (o.isSprite && o.userData.text && o.userData.layer !== 'labels' && !o.userData.along) {
+    if (!shown(o)) { o.center.set(0, 0); o.userData.off = null; continue; }
+    o.getWorldPosition(_a); const z = _a.project(camera); if (z.z < -1 || z.z > 1) continue;
+    const h = o.userData.px, w = h * o.userData.asp, [x, y] = toS(z), m = 6;
+    const cands = [[m, -h / 2], [m, -h - m], [m, m], [-w - m, -h / 2], [-w - m, -h - m], [-w - m, m], [-w / 2, -h - m], [-w / 2, m],
+      [m * 4, -h / 2], [-w - m * 4, -h / 2], [-w / 2, -h - m * 4], [-w / 2, m * 4]];   // (dx, dy) of the tag's top-left from the point, screen px
+    let best = null, bs = Infinity;
+    cands.forEach(([dx, dy], n) => { const r = [x + dx, y + dy, x + dx + w, y + dy + h];
+      let sc = n * 0.5 + (n >= 8 ? 20 : 0);   // prefer the first, closest positions
+      if (r[0] < 2 || r[1] < 2 || r[2] > VW - 2 || r[3] > VH - 2) sc += 1e4;
+      const R4 = rq(r); for (const p of placed) if (touch(p, R4)) sc += w * h * 5;
+      for (const b of boxes) sc += ov(r, b) * 0.3;
+      for (const s of segs) if (hits(r[0], r[1], r[2], r[3], s)) sc += 40;
+      if (sc < bs) { bs = sc; best = r; } });
+    placed.push(rq(best));
+    o.center.set(-(best[0] - x) / w, -(y - best[3]) / h); o.userData.off = [best[0] - x, y - best[3]];
+  }
+}
+const plateBox = (tris, z0, z1) => { const b = new THREE.Box3(); for (const t of tris) for (let k = 0; k < 6; k += 2) { b.expandByPoint(new THREE.Vector3(t[k], t[k + 1], z0)); b.expandByPoint(new THREE.Vector3(t[k], t[k + 1], z1)); } return b; };
+// Centre + drawing scale under the View buttons
+const VT = viewTools({ exp: { renderImage, svgItems: () => collectItems(), fileStem: () => `2GBX_LifeSafety_${selName()}_${stamp()}`, title: () => `DD-G01 HYPEROBJECT · Life safety · ${selName() === 'ALL' ? 'All floors' : selName()}${VT.scale() && camera === ocam ? ' · ' + VT.scaleText() : ''}` }, view, ocam, pcam, controls, getCamera: () => camera, setOrtho: o => setProj(o), key: 'ls', getBox: () => { if (floorSel >= 0) return plateBox(L[floorSel].tris, L[floorSel].z + floorSel * explode, (L[floorSel + 1]?.z ?? L[floorSel].z + 9) + floorSel * explode); if (floorSel === -2 && B1B) return new THREE.Box3(new THREE.Vector3(B1B[0], B1B[1], (P.basementZ ?? 0) - explode), new THREE.Vector3(B1B[2], B1B[3], L[0].z - explode)); return new THREE.Box3(bmin.clone(), bmax.clone().add(new THREE.Vector3(0, 0, explode * L.length))).expandByScalar(radius * 0.25); } });   // margin for the long floor labels
+renderer.setAnimationLoop(() => { controls.update(); VT.tick(); placeLabels(dynG.children.filter(o => o.userData.layer === 'labels')); scaleTags(); layoutTags(); renderer.render(scene, camera); });

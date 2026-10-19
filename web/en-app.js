@@ -2,8 +2,9 @@
 // the energy checks will be added here as the page is defined.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { CATS } from './engine.js?v=20261013j'; // keep in step with APP_V in st.html
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261013j';
+import { CATS } from './engine.js?v=20261018zp'; // keep in step with APP_V in st.html
+import { viewTools } from './viewtools.js?v=20261018zp';
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261018zp';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -19,7 +20,7 @@ let volOp = Math.min(0.3, Math.max(0.05, LS('en.volOp') ?? 0.15));
 
 // ---------- three ----------
 const view = $('#view');
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
 renderer.localClippingEnabled = true; renderer.setPixelRatio(Math.min(2, devicePixelRatio)); view.prepend(renderer.domElement);
 const scene = new THREE.Scene(), BG = { light: new THREE.Color('#f7f7f4'), dark: new THREE.Color('#15171a') }; scene.background = BG.light;
 const pcam = new THREE.PerspectiveCamera(28, 1, 0.5, 3000), ocam = new THREE.OrthographicCamera(-1, 1, 1, -1, -2000, 4000);
@@ -192,19 +193,21 @@ function status() { $('#status').innerHTML = `Energy · work in progress · ${fl
 const toast = m => { const t = $('#toast'); t.textContent = m; t.style.opacity = 1; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.opacity = 0, 2600); };
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
 function download(name, data, type) { const b = data instanceof Blob ? data : new Blob([data], { type }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
-function exportPNG(w, h) {
-  const max = renderer.capabilities.maxTextureSize; if (w > max) { h = Math.round(h * max / w); w = max; }
+// renders rect (screen px of the view, may reach beyond it) at w × h with a transparent background (export dialog)
+function renderImage(w, h, rect) {
+  const max = renderer.capabilities.maxTextureSize; if (w > max) { h = Math.round(h * max / w); w = max; } if (h > max) { w = Math.round(w * max / h); h = max; }
   const vw = view.clientWidth, vh = view.clientHeight, pr = renderer.getPixelRatio();
   renderer.setPixelRatio(1); renderer.setSize(w, h, false);
-  if (camera === pcam) { pcam.aspect = w / h; pcam.updateProjectionMatrix(); } else { const hh = (ocam.top - ocam.bottom) / 2; ocam.left = -hh * w / h; ocam.right = hh * w / h; ocam.updateProjectionMatrix(); }
-  scaleTags(vh); renderer.render(scene, camera);
-  renderer.domElement.toBlob(b => download(`2GBX_Energy_${selName()}_${w}x${h}_${stamp()}.png`, b), 'image/png');
+  camera.setViewOffset(vw, vh, rect.x, rect.y, rect.w, rect.h);
+  scaleTags(vh); const bg = scene.background; scene.background = null; renderer.setClearColor(0x000000, 0); renderer.render(scene, camera); scene.background = bg; camera.clearViewOffset();
+  const out = document.createElement('canvas'); out.width = w; out.height = h; out.getContext('2d').drawImage(renderer.domElement, 0, 0);
   renderer.setPixelRatio(pr); renderer.setSize(vw, vh, false); renderer.domElement.style.width = vw + 'px'; renderer.domElement.style.height = vh + 'px'; resize();
-  toast(`PNG ${w}×${h} exported`);
+  return out;
 }
 const selName = () => floorSel === -1 ? 'ALL' : flName(floorSel);
-$('#bPng').onclick = () => exportPNG(3840, 2160);
-$('#bPng8').onclick = () => exportPNG(7680, 4320);
+$('#bPng').onclick = () => VT.openExport('png4');
+$('#bSvg').onclick = () => VT.openExport('svg');
+$('#bPng8').onclick = () => VT.openExport('png8');
 // Rhino / OBJ: what is visible now
 const CTX = { slabs: 'Slabs 261004', labels: 'Floor labels' };
 const visItems = () => collect([root], {
@@ -237,4 +240,7 @@ function placeLabels(list) {
   for (const s of list) { s.position.x = px; s.position.y = py; }
 }
 const labelSprites = root.children.filter(o => o.userData.layer === 'labels');
-renderer.setAnimationLoop(() => { controls.update(); placeLabels(labelSprites); scaleTags(); renderer.render(scene, camera); });
+const plateBox = (tris, z0, z1) => { const b = new THREE.Box3(); for (const t of tris) for (let k = 0; k < 6; k += 2) { b.expandByPoint(new THREE.Vector3(t[k], t[k + 1], z0)); b.expandByPoint(new THREE.Vector3(t[k], t[k + 1], z1)); } return b; };
+// Centre + drawing scale under the View buttons
+const VT = viewTools({ exp: { renderImage, svgItems: () => visItems(), fileStem: () => `2GBX_Energy_${selName()}_${stamp()}`, title: () => `DD-G01 HYPEROBJECT · Energy · ${selName() === 'ALL' ? 'All floors' : selName()}${VT.scale() && camera === ocam ? ' · ' + VT.scaleText() : ''}` }, view, ocam, pcam, controls, getCamera: () => camera, setOrtho: o => setProj(o), key: 'en', getBox: () => { if (floorSel >= 0) return plateBox(L[floorSel].tris, L[floorSel].z, L[floorSel + 1]?.z ?? L[floorSel].z + 9); return new THREE.Box3(bmin.clone(), bmax.clone()); } });
+renderer.setAnimationLoop(() => { controls.update(); VT.tick(); placeLabels(labelSprites); scaleTags(); renderer.render(scene, camera); });

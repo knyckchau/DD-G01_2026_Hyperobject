@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { generate, DEFAULTS, CATS, MISSING, IN, M2FT2 } from './engine.js?v=20261013j'; // keep in step with APP_V in index.html
+import { generate, DEFAULTS, CATS, MISSING, IN, M2FT2 } from './engine.js?v=20261018zp'; // keep in step with APP_V in index.html
+import { viewTools } from './viewtools.js?v=20261018zp';
+import { collect, toOBJ, addTo3dm, rhinoLib } from './export3d.js?v=20261018zp';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -20,7 +22,7 @@ const COL = {
   'Air handling unit': '#748ffc', 'Diffuser': '#91a7ff', 'Chiller / heat-recovery chiller': '#3bc9db', 'Air-to-water heat pump': '#ff8787', 'DOAS with energy recovery': '#94d82d', 'Central AHU': '#748ffc', 'Pump': '#66d9e8',
   'Domestic cold water': '#0ca678', 'Domestic hot water': '#fa5252', 'Sanitary': '#8d6e63', 'Vent': '#adb5bd', 'Storm': '#7048e8', 'Restroom core': '#63e6be', 'Domestic booster pump': '#20c997', 'Water heater': '#ff8787',
   'Cable tray': '#fab005', 'Busway riser': '#f59f00', 'Emergency feeder': '#d9480f', 'Panelboards': '#ffd43b', 'Service feeders': '#f59f00', 'Main switchboard': '#fcc419', 'Utility transformer vault': '#e8b04a', 'Emergency/standby generator': '#fd7e14',
-  'Sprinkler main': '#e03131', 'Sprinkler branch': '#ff8787', 'Sprinkler head': '#c92a2a', 'Standpipe': '#a61e4d', 'Fire service': '#e03131', 'Fire pump': '#f03e3e',
+  'Sprinkler main': '#e03131', 'Sprinkler branch': '#ff8787', 'Sprinkler head': '#c92a2a', 'Standpipe': '#a61e4d', 'Roof manifold': '#a61e4d', 'Fire command center': '#1971c2', 'Fire service': '#e03131', 'Fire pump': '#f03e3e',
   'Shaft': '#868e96', 'Projector': '#e64980', 'AV rack': '#862e9c',
 };
 const LEGEND = [['Supply air', 'Supply'], ['Return air', 'Return'], ['Outdoor air', 'Outdoor air'], ['Exhaust air', 'Exhaust'], ['Chilled water', 'CHW'], ['Heating hot water', 'HHW'],
@@ -32,7 +34,7 @@ const LEGEND = [['Supply air', 'Supply'], ['Return air', 'Return'], ['Outdoor ai
     HVAC: [['Supply air', 'Supply'], ['Return air', 'Return'], ['Outdoor air', 'Outdoor air'], ['Exhaust air', 'Exhaust'], ['Chilled water', 'CHW'], ['Heating hot water', 'HHW'], ['Diffuser', 'Diffusers']],
     Plumbing: [['Domestic cold water', 'DCW'], ['Domestic hot water', 'DHW'], ['Sanitary', 'Sanitary'], ['Vent', 'Vent'], ['Storm', 'Storm']],
     Electrical: [['Cable tray|Busway riser', 'Tray / busway'], ['Emergency feeder', 'Emergency']],
-    Fire: [['Sprinkler main|Sprinkler branch', 'Sprinkler pipe'], ['Sprinkler head', 'Sprinkler heads'], ['Standpipe', 'Standpipe']],
+    Fire: [['Sprinkler main|Sprinkler branch', 'Sprinkler pipe'], ['Sprinkler head', 'Sprinkler heads'], ['Standpipe', 'Standpipe + hose valves'], ['Roof manifold', 'Roof manifold'], ['Fire command center', 'Fire command center (placeholder)']],
     AV: [['Projector|AV rack', 'Projector / AV']],
   };
   for (const [sys, items] of Object.entries(SYSLEG)) {
@@ -50,7 +52,7 @@ const LEGEND = [['Supply air', 'Supply'], ['Return air', 'Return'], ['Outdoor ai
 
 // ---------- three setup ----------
 const view = $('#view');
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
 renderer.localClippingEnabled = true;
 renderer.setPixelRatio(Math.min(2, devicePixelRatio));
 view.prepend(renderer.domElement);
@@ -158,7 +160,7 @@ function textSprite(txt) {   // floor label: boxed tag, same as the Structure, L
   const c = document.createElement('canvas'), x = c.getContext('2d'), F = '600 30px IBM Plex Mono, monospace'; x.font = F; const w = Math.ceil(x.measureText(txt).width) + 22;
   c.width = w; c.height = 56; x.font = F; x.fillStyle = 'rgba(255,255,255,0.93)'; x.fillRect(0, 6, w, 44); x.fillStyle = '#868e96'; x.fillRect(0, 6, 6, 44); x.fillStyle = '#1d1f22'; x.fillText(txt, 12, 39);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true })); s.userData.px = 19; s.userData.asp = w / 56; s.center.set(1, 0); s.renderOrder = 10; return s;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true })); s.userData.text = txt; s.userData.px = 19; s.userData.asp = w / 56; s.center.set(1, 0); s.renderOrder = 10; return s;
 }
 // floor labels keep a constant on-screen size whatever the zoom
 const _sv = new THREE.Vector3();
@@ -223,10 +225,20 @@ function buildMEP() {
     }
     obj.userData.el = el; el.obj = obj; g.add(obj); pickables.push(obj);
   }
-  P.levels.forEach((l, i) => { const s = textSprite(model.floors[i].name + ' +' + l.z.toFixed(1)); s.position.set(bmin.x - 6, bmin.y, l.z + 0.6); ctx[i].label = s; ctx[i].slab.add(s); });
+  P.levels.forEach((l, i) => { const s = textSprite(model.floors[i].name + ' +' + l.z.toFixed(1)); s.position.set(bmin.x - 6, bmin.y, l.z + 0.6); s.userData.layer = 'Context::Floor labels'; ctx[i].label = s; ctx[i].slab.add(s); });
   applyVis();
 }
 
+// layer names for the context in the 3DM / OBJ / SVG exports
+shellG.userData.layer = 'Context::Basement and site'; ctxG.userData.layer = 'Context::Shafts, cores and plant rooms'; detG.userData.layer = 'Context::Cores and restrooms (detail)'; bG.userData.layer = 'Context::Basement plant';
+ctx.forEach(c => { c.slab.userData.layer = 'Context::Slabs'; c.prog.userData.layer = 'Context::Programme volumes'; });
+// everything visible that is not an MEP element (slabs, programme, cores, labels …), at true heights
+function contextItems() {
+  const ex = explode, vis = []; if (ex) { root.traverse(o => vis.push(o.visible)); explode = 0; applyVis(); let n = 0; root.traverse(o => { o.visible = vis[n++]; }); }
+  const items = collect([root], { layerOf: own => own.userData.layer, fallback: 'Context::Other', zRange: clipLo.constant < 1e3 ? [-clipLo.constant, clipHi.constant] : null, skip: new Set(model.elements.map(e => e.obj).filter(Boolean)) });
+  if (ex) { explode = ex; applyVis(); }
+  return items;
+}
 function applyVis() {
   const sys = Object.fromEntries($$('[data-sys]').map(c => [c.dataset.sys, c.checked]));
   const sub = Object.fromEntries($$('[data-sub]').flatMap(c => c.dataset.sub.split('|').map(k => [k, c.checked])));
@@ -284,13 +296,17 @@ addEventListener('resize', resize);
   side('rgrip', '--rw', 'mep.rw', 390, 300, x => innerWidth - x, '--lw');
 }
 addEventListener('keydown', e => { if (e.key === 'Escape' && kpiSel) { kpiSel = null; if (tab === 'sum') renderPane(); } });
+// B1: fit the plan to the basement technical rooms (the basement has no floor plate in the model)
+const B1T = P.mep?.tech || [], B1B = B1T.length ? [Math.min(...B1T.map(t => t.bbox[0])), Math.min(...B1T.map(t => t.bbox[1])), Math.max(...B1T.map(t => t.bbox[3])), Math.max(...B1T.map(t => t.bbox[4]))] : null;
+const b1Centre = z => B1B ? new THREE.Vector3((B1B[0] + B1B[2]) / 2, (B1B[1] + B1B[3]) / 2, z) : new THREE.Vector3(center.x, center.y, z);
+const b1Zoom = () => B1B ? 0.7 * Math.min(2 * ocam.right / (B1B[2] - B1B[0] + 1), 2 * ocam.top / (B1B[3] - B1B[1] + 1)) : 1;
 function setView(v) {
   const dirs = { iso: [-1, -1.15, 0.85], iso2: [1.1, -1, 0.8], top: [0, -0.001, 1], front: [0, -1, 0.02], side: [1, 0, 0.02] };
   const d = new THREE.Vector3(...dirs[v]).normalize();
   const tr = P.mep?.tech || [], tgt = floorSel === -2 && tr.length ? new THREE.Vector3((Math.min(...tr.map(t => t.bbox[0])) + Math.max(...tr.map(t => t.bbox[3]))) / 2, (Math.min(...tr.map(t => t.bbox[1])) + Math.max(...tr.map(t => t.bbox[4]))) / 2, (P.basementZ ?? 0) + 1) : floorSel === -2 ? new THREE.Vector3(center.x, center.y, (P.basementZ ?? 0) + 1) : floorSel >= 0 ? new THREE.Vector3(center.x, center.y, P.levels[floorSel].z + floorSel * explode + 2) : center.clone().add(new THREE.Vector3(0, 0, explode * P.levels.length / 2));
   controls.target.copy(tgt);
   camera.position.copy(tgt).add(d.multiplyScalar(radius * 3.2));
-  if (camera === ocam) { ocam.zoom = floorSel === -2 ? 3 : floorSel !== -1 && v !== 'front' && v !== 'side' ? 1.25 : 1; ocam.updateProjectionMatrix(); }
+  if (camera === ocam) { ocam.zoom = floorSel === -2 ? (v === 'top' ? b1Zoom() : 3) : floorSel !== -1 && v !== 'front' && v !== 'side' ? 1.25 : 1; ocam.updateProjectionMatrix(); }
   controls.update();
   markView(v);
 }
@@ -369,7 +385,7 @@ $('#bReset').onclick = () => { A = { ...DEFAULTS }; C = JSON.parse(JSON.stringif
 
 // floor select
 $('#floorSel').innerHTML = '<option value="-1">All floors</option><option value="-2">B1 · basement plant</option>' + P.levels.map((l, i) => `<option value="${i}">${i === P.levels.length - 1 ? 'RT' : 'L' + String(i + 1).padStart(2, '0')} · +${l.z.toFixed(1)} m</option>`).join('');
-$('#floorSel').onchange = e => { floorSel = +e.target.value; applyVis(); setView(floorSel === -1 ? 'iso' : floorSel === -2 ? 'iso2' : 'top'); };
+$('#floorSel').onchange = e => { floorSel = +e.target.value; applyVis(); setView(floorSel === -1 ? 'iso' : 'top'); };
 $('#explode').oninput = e => { explode = +e.target.value; applyVis(); };
 $$('[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
 $('#bProj').onclick = () => setProj(!ortho);
@@ -430,6 +446,12 @@ function kpiInfo(k, s) {
       `flow = 500 + 250 × (standpipes − 1), max 1000 = ${f0(s.spFlow)} gpm  (${s.nStand} standpipes)\n` +
       `pressure = ${A.topOutletPsi} psi + ${f0(s.fpElevFt)} ft × 0.433 + 15 friction − 0.8 × ${A.streetPsi} street\n= ${f0(s.fpHeadPsi)} psi\n` +
       `hp = gpm × psi × 2.31 ÷ (3960 × 0.7), rounded up to 25\n= ${f0(s.spFlow)} × ${f0(s.fpHeadPsi)} × 2.31 ÷ 2772 → ${s.fpHp} hp`, 'Suction pressure should come from a hydrant flow test (residual), not 0.8 × static.'],
+    rm: ['Roof manifold', 'NYC BC Appendix Q (NFPA 14 §7.3.2.1 mod.); §1011.12 (stair to roof)',
+      `hose outlets on top of a standpipe at the roof; standpipes run in the exit stairs, so a stair must reach the roof\n` + s.stairs.map(x => `${x.id}: top +${f1(x.top)} m ${x.top >= s.roofZ - 0.5 ? '✓ reaches the roof' : `✕ roof at +${f1(s.roofZ)}`}`).join('\n'),
+      'The fire pump pressure is sized for the top outlet at the roof manifold.'],
+    fcc: ['Fire command center', 'NYC BC §403.4.6, §911',
+      'required in high-rise buildings: a room at grade for FDNY with fire alarm, voice communication, elevator and smoke control panels',
+      'Not in the model; the box at grade is a placeholder. Its location needs FDNY approval.'],
   }[k];
   if (!I) return '';
   const q = (CODE_Q[k] || []).map(([ref, txt, url]) => `<blockquote><b>${esc(ref)}</b><span>${/Table/.test(ref) && !/§/.test(ref) ? esc(txt) : '“' + esc(txt) + '”'}</span><a href="${url}" target="_blank" rel="noopener">source</a></blockquote>`).join('');
@@ -449,6 +471,7 @@ function renderPane() {
       ['stack', 'Plumbing', s.stackIn + ' in', `Sanitary stack (${fmt(s.totDFU)} DFU)`, au('Sanitary stack')], ['storm', 'Plumbing', s.leaders + '×' + s.leaderIn + ' in', `Storm leaders (${fmt(s.stormGpm)} gpm)`, au('Storm design rate')],
       ['kva', 'Electrical', fmt(s.demandKVA) + ' kVA', `Service demand + spare · ${s.svcA} A`, au('Service size')], ['gen', 'Electrical', fmt(s.genKW) + ' kW', 'Emergency / standby generator', au('Emergency & standby power')],
       ['heads', 'Fire protection', fmt(s.heads), 'Sprinkler heads', au('Sprinkler layout')], ['fp', 'Fire protection', s.fpHp + ' hp', `Fire pump ${s.spFlow} gpm @ ${fmt(s.fpHeadPsi)} psi`, au('Standpipes & fire pump')],
+      ['rm', 'Fire protection', s.manifold ? 'SP-' + s.manifold : 'none', 'Roof manifold', au('Roof manifold')], ['fcc', 'Fire protection', 'not modelled', 'Fire command center (placeholder at grade)', au('Fire command center')],
     ];
     // detail box goes right after the row (pair of cards) of the selected card, within its group
     const grid = G => { let cards = ''; G.forEach(([k, , v, l, st], i) => { cards += kpi(st, v, l, k); const rowEnd = i % 2 === 1 || i === G.length - 1; if (kpiSel && rowEnd && (k === kpiSel || (i % 2 === 1 && G[i - 1][0] === kpiSel))) cards += kpiInfo(kpiSel, s); }); return `<div class="kpis${kpiSel ? ' focus' : ''}">${cards}</div>`; };
@@ -540,6 +563,8 @@ const DESC = {
   'Sprinkler head': 'Heat-activated nozzles that open automatically in a fire. Spacing depends on hazard class (15 ft light, 11 ft ordinary — max 130 ft² per head).',
   'Standpipe': 'Vertical fire pipe in each stair with hose valves at every landing, used by the fire department; also feeds the floor sprinklers (combined system).',
   'Fire service': 'Dedicated water main from the street to the fire pump and standpipes, with a Siamese connection for fire-department pumpers.',
+  'Roof manifold': 'Hose outlets on top of a standpipe at the roof, for roof operations, exposure protection of neighbouring buildings and testing. Needs a stair (with its standpipe) that reaches the roof.',
+  'Fire command center': 'Room at grade for FDNY in a high-rise: fire alarm, voice communication, elevator and smoke control panels. Placeholder only: not in the model, location by FDNY approval.',
   'Fire pump': 'Boosts water pressure for the standpipes and sprinklers so the top hose outlet gets ~100 psi. In a 2-hr rated room (NFPA 20).',
   'Projector': 'Laser projector hung from the ceiling, aimed at the hall walls; overlapping, edge-blended images create the 360° projection. Each one is a heat and power load.',
   'AV rack': 'Media servers, audio processing and network for the immersive hall. Runs 24/7 and needs dedicated cooling.',
@@ -585,21 +610,20 @@ function regen() {
 const toast = m => { const t = $('#toast'); t.textContent = m; t.style.opacity = 1; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.opacity = 0, 2600); };
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
 function download(name, data, type) { const b = data instanceof Blob ? data : new Blob([data], { type }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
-function exportPNG(w, h) {
-  const max = renderer.capabilities.maxTextureSize; if (w > max) { h = Math.round(h * max / w); w = max; }
+// renders rect (screen px of the view, may reach beyond it) at w × h with a transparent background (export dialog)
+function renderImage(w, h, rect) {
+  const max = renderer.capabilities.maxTextureSize; if (w > max) { h = Math.round(h * max / w); w = max; } if (h > max) { w = Math.round(w * max / h); h = max; }
   const vw = view.clientWidth, vh = view.clientHeight, pr = renderer.getPixelRatio();
   renderer.setPixelRatio(1); renderer.setSize(w, h, false);
-  // keep framing of the current view: match the viewport aspect within the requested frame
-  const asp = w / h;
-  if (camera === pcam) { pcam.aspect = asp; pcam.updateProjectionMatrix(); }
-  else { const hh = (ocam.top - ocam.bottom) / 2; ocam.left = -hh * asp; ocam.right = hh * asp; ocam.updateProjectionMatrix(); }
-  scaleTags(vh); renderer.render(scene, camera);
-  renderer.domElement.toBlob(b => download(`2GBX_MEP_${selName()}_${w}x${h}_${stamp()}.png`, b), 'image/png');
+  camera.setViewOffset(vw, vh, rect.x, rect.y, rect.w, rect.h);
+  scaleTags(vh); const bg = scene.background; scene.background = null; renderer.setClearColor(0x000000, 0); renderer.render(scene, camera); scene.background = bg; camera.clearViewOffset();
+  const out = document.createElement('canvas'); out.width = w; out.height = h; out.getContext('2d').drawImage(renderer.domElement, 0, 0);
   renderer.setPixelRatio(pr); renderer.setSize(vw, vh, false); renderer.domElement.style.width = vw + 'px'; renderer.domElement.style.height = vh + 'px'; resize();
-  toast(`PNG ${w}×${h} exported`);
+  return out;
 }
-$('#bPng').onclick = () => exportPNG(3840, 2160);
-$('#bPng8').onclick = () => exportPNG(7680, 4320);
+$('#bPng').onclick = () => VT.openExport('png4');
+$('#bSvg').onclick = () => VT.openExport('svg');
+$('#bPng8').onclick = () => VT.openExport('png8');
 
 function visibleEls() { return model.elements.filter(e => e.obj && e.obj.visible && e.obj.parent.visible && e.obj.parent.parent.visible); }
 function worldGeo(o) { // geometry in model coordinates (ignores explode offset)
@@ -610,8 +634,7 @@ let rhinoP = null;
 async function export3dm() {
   toast('Loading rhino3dm…');
   try {
-    rhinoP ||= import('https://cdn.jsdelivr.net/npm/rhino3dm@8.35.0/rhino3dm.module.min.js').then(m => m.default({ locateFile: f => 'https://cdn.jsdelivr.net/npm/rhino3dm@8.35.0/' + f }));
-    const rhino = await rhinoP;
+    const rhino = await rhinoLib();
     const doc = new rhino.File3dm();
     doc.settings().modelUnitSystem = rhino.UnitSystem.Meters;
     const layers = {};
@@ -641,6 +664,7 @@ async function export3dm() {
       doc.objects().add(m, attr); n++;
       if (e.a) { const a2 = new rhino.ObjectAttributes(); a2.name = attr.name; a2.layerIndex = layer(`MEP_CENTERLINES::${e.sys}::${e.sub}`, col); for (const [k, v] of Object.entries({ system: e.sys, type: e.sub, w_in: (e.w / IN).toFixed(1), h_in: (e.h / IN).toFixed(1), ...e.props })) a2.setUserString(k, String(v)); doc.objects().add(new rhino.LineCurve(e.a, e.b), a2); }
     }
+    n += addTo3dm(rhino, doc, contextItems(), layer);   // plus every other visible layer
     download(`2GBX_MEP_${selName()}_${stamp()}.3dm`, new Blob([doc.toByteArray()], { type: 'application/octet-stream' }));
     toast(`Rhino .3dm exported · ${n} objects (metres)`);
   } catch (err) { console.error(err); toast('rhino3dm unavailable — exporting OBJ instead'); exportOBJ(); }
@@ -658,6 +682,7 @@ function exportOBJ() {
     for (let i = 0; i < idx.count; i += 3) out += `f ${idx.getX(i) + off} ${idx.getX(i + 1) + off} ${idx.getX(i + 2) + off}\n`;
     off += p.count;
   }
+  { const t = toOBJ(contextItems(), '2GBX_MEP', '', off, false); out += t.obj; mtl += t.mtl; }   // plus every other visible layer
   download('2GBX_MEP.obj', out, 'text/plain'); setTimeout(() => download('2GBX_MEP.mtl', mtl, 'text/plain'), 300);
   toast('OBJ + MTL exported (metres, Z up)');
 }
@@ -683,4 +708,7 @@ function placeLabels(list) {
   const px = best[0] + Math.sign(best[0] - center.x) * 2, py = best[1] + Math.sign(best[1] - center.y) * 2;
   for (const s of list) { s.position.x = px; s.position.y = py; }
 }
-renderer.setAnimationLoop(() => { controls.update(); placeLabels(ctx.map(c => c.label).filter(Boolean)); scaleTags(); renderer.render(scene, camera); });
+const plateBox = (tris, z0, z1) => { const b = new THREE.Box3(); for (const t of tris) for (let k = 0; k < 6; k += 2) { b.expandByPoint(new THREE.Vector3(t[k], t[k + 1], z0)); b.expandByPoint(new THREE.Vector3(t[k], t[k + 1], z1)); } return b; };
+// Centre + drawing scale under the View buttons
+const VT = viewTools({ exp: { renderImage, svgItems: () => collect([root], { layerOf: own => own.userData.layer, fallback: 'MEP', zRange: clipLo.constant < 1e3 ? [-clipLo.constant, clipHi.constant] : null }), fileStem: () => `2GBX_MEP_${selName()}_${stamp()}`, title: () => `DD-G01 HYPEROBJECT · MEP · ${selName() === 'ALL' ? 'All floors' : selName()}${VT.scale() && camera === ocam ? ' · ' + VT.scaleText() : ''}` }, view, ocam, pcam, controls, getCamera: () => camera, setOrtho: o => setProj(o), key: 'mep', getBox: () => { const L = P.levels; if (floorSel >= 0) return plateBox(L[floorSel].tris, L[floorSel].z + floorSel * explode, (L[floorSel + 1]?.z ?? L[floorSel].z + 8) + floorSel * explode); if (floorSel === -2 && B1B) return new THREE.Box3(new THREE.Vector3(B1B[0], B1B[1], P.basementZ ?? 0), new THREE.Vector3(B1B[2], B1B[3], L[0].z)); return new THREE.Box3(bmin.clone(), bmax.clone().add(new THREE.Vector3(0, 0, explode * L.length))); } });
+renderer.setAnimationLoop(() => { controls.update(); VT.tick(); placeLabels(ctx.map(c => c.label).filter(Boolean)); scaleTags(); renderer.render(scene, camera); });

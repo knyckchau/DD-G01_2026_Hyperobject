@@ -2,8 +2,9 @@
 // from models/*structure*.fbx) against the current slabs and programme, layer by layer.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { CATS } from './engine.js?v=20261013j'; // keep in step with APP_V in st.html
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261013j';
+import { CATS } from './engine.js?v=20261018zp'; // keep in step with APP_V in st.html
+import { viewTools } from './viewtools.js?v=20261018zp';
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261018zp';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -20,7 +21,7 @@ let volOp = Math.min(0.3, Math.max(0.05, LS('st.volOp') ?? 0.07)), strOp = LS('s
 
 // ---------- three ----------
 const view = $('#view');
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
 renderer.localClippingEnabled = true; renderer.setPixelRatio(Math.min(2, devicePixelRatio)); view.prepend(renderer.domElement);
 const scene = new THREE.Scene(), BG = { light: new THREE.Color('#f7f7f4'), dark: new THREE.Color('#15171a') }; scene.background = BG.light;
 const pcam = new THREE.PerspectiveCamera(28, 1, 0.5, 3000), ocam = new THREE.OrthographicCamera(-1, 1, 1, -1, -2000, 4000);
@@ -111,7 +112,7 @@ document.addEventListener('input', e => {
 function applyVis() {
   const on = k => $(`[data-layer="${k}"]`)?.checked;
   const vc = Object.fromEntries($$('[data-vcat]').map(c => [c.dataset.vcat, c.checked])), sl = Object.fromEntries($$('[data-slayer]').map(c => [c.dataset.slayer, c.checked]));
-  const onFl = f => f == null || floorSel === -1 || f === floorSel;
+  const onFl = f => f == null || floorSel === -1 || f === floorSel;   // B1 (-2): only the structure, clipped to the basement
   for (const o of root.children) {
     const k = o.userData.layer;
     if (k === 'str') o.visible = sl[o.userData.grp + '|' + o.userData.name] !== false;
@@ -119,7 +120,8 @@ function applyVis() {
   }
   // programme categories
   (P.volMeshes || []).forEach((vm, i) => { const v = P.volumes.find(q => q.id === vm.id), m = volMeshes[i]; if (m && v) m.visible = !!on('occ') && onFl(v.floor) && vc[v.cat] !== false; });
-  if (floorSel >= 0) { const z0 = L[floorSel].z - 0.05, z1 = (L[floorSel + 1]?.z ?? L[floorSel].z + 9) - 0.05; clipLo.constant = -z0; clipHi.constant = z1; }
+  if (floorSel === -2) { clipLo.constant = -((P.basementZ ?? 0) - 1); clipHi.constant = L[0].z + 0.5; }
+  else if (floorSel >= 0) { const z0 = L[floorSel].z - 0.05, z1 = (L[floorSel + 1]?.z ?? L[floorSel].z + 9) - 0.05; clipLo.constant = -z0; clipHi.constant = z1; }
   else { clipLo.constant = 1e4; clipHi.constant = 1e4; }
   status();
 }
@@ -146,6 +148,7 @@ addEventListener('resize', resize);
 function setView(v) {
   const dirs = { iso: [-1, -1.15, 0.85], iso2: [1.1, -1, 0.8], top: [0, -0.001, 1], front: [0, -1, 0.02], side: [1, 0, 0.02] };
   const d = new THREE.Vector3(...dirs[v]).normalize(); let tgt = center.clone(), zoom = 1;
+  if (floorSel === -2) tgt = new THREE.Vector3(center.x, center.y, P.basementZ ?? 0);   // underground structure spans the whole site: show it all
   if (floorSel >= 0) {
     const xs = [], ys = []; for (const t of L[floorSel].tris) for (let k = 0; k < 6; k += 2) { xs.push(t[k]); ys.push(t[k + 1]); }
     const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), s = radius * 1.1, asp = view.clientWidth / view.clientHeight;
@@ -161,7 +164,7 @@ function markView(v) { $$('[data-view]').forEach(b => b.classList.toggle('on', b
 controls.addEventListener('change', () => { if (viewDir && camera.position.clone().sub(controls.target).normalize().dot(viewDir) < 0.9995) markView(null); });
 
 function setProj(o) { ortho = o; const p = camera.position.clone(), t = controls.target.clone(); camera = o ? ocam : pcam; camera.position.copy(p); controls.object = camera; controls.target.copy(t); controls.update(); $('#bProj').textContent = o ? 'Ortho' : 'Perspective'; $('#bProj').classList.add('on'); }
-$('#floorSel').innerHTML = '<option value="-1">All floors</option>' + L.map((l, i) => `<option value="${i}">${flName(i)} · +${l.z.toFixed(1)}</option>`).join('');
+$('#floorSel').innerHTML = '<option value="-1">All floors</option><option value="-2">B1 · basement</option>' + L.map((l, i) => `<option value="${i}">${flName(i)} · +${l.z.toFixed(1)}</option>`).join('');
 $('#floorSel').onchange = e => { floorSel = +e.target.value; applyVis(); setView(floorSel === -1 ? 'iso' : 'top'); };
 $$('[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
 $('#bProj').onclick = () => setProj(!ortho);
@@ -224,30 +227,32 @@ function renderPane() {
     $('#bDesel').onclick = () => select(null);
   }
 }
-function status() { $('#status').innerHTML = S?.rows ? `<b style="color:var(--ink)">${S.rows.length}</b> structure layers · ${esc(S.source)} · ${floorSel === -1 ? 'ALL' : flName(floorSel)}` : 'Loading structure…'; }
+function status() { $('#status').innerHTML = S?.rows ? `<b style="color:var(--ink)">${S.rows.length}</b> structure layers · ${esc(S.source)} · ${selName()}` : 'Loading structure…'; }
 
 // ---------- exports ----------
 const toast = m => { const t = $('#toast'); t.textContent = m; t.style.opacity = 1; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.opacity = 0, 2600); };
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
 function download(name, data, type) { const b = data instanceof Blob ? data : new Blob([data], { type }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
-function exportPNG(w, h) {
-  const max = renderer.capabilities.maxTextureSize; if (w > max) { h = Math.round(h * max / w); w = max; }
+// renders rect (screen px of the view, may reach beyond it) at w × h with a transparent background (export dialog)
+function renderImage(w, h, rect) {
+  const max = renderer.capabilities.maxTextureSize; if (w > max) { h = Math.round(h * max / w); w = max; } if (h > max) { w = Math.round(w * max / h); h = max; }
   const vw = view.clientWidth, vh = view.clientHeight, pr = renderer.getPixelRatio();
   renderer.setPixelRatio(1); renderer.setSize(w, h, false);
-  if (camera === pcam) { pcam.aspect = w / h; pcam.updateProjectionMatrix(); } else { const hh = (ocam.top - ocam.bottom) / 2; ocam.left = -hh * w / h; ocam.right = hh * w / h; ocam.updateProjectionMatrix(); }
-  scaleTags(vh); renderer.render(scene, camera);
-  renderer.domElement.toBlob(b => download(`2GBX_Structure_${selName()}_${w}x${h}_${stamp()}.png`, b), 'image/png');
+  camera.setViewOffset(vw, vh, rect.x, rect.y, rect.w, rect.h);
+  scaleTags(vh); const bg = scene.background; scene.background = null; renderer.setClearColor(0x000000, 0); renderer.render(scene, camera); scene.background = bg; camera.clearViewOffset();
+  const out = document.createElement('canvas'); out.width = w; out.height = h; out.getContext('2d').drawImage(renderer.domElement, 0, 0);
   renderer.setPixelRatio(pr); renderer.setSize(vw, vh, false); renderer.domElement.style.width = vw + 'px'; renderer.domElement.style.height = vh + 'px'; resize();
-  toast(`PNG ${w}×${h} exported`);
+  return out;
 }
-const selName = () => floorSel === -1 ? 'ALL' : flName(floorSel);
-$('#bPng').onclick = () => exportPNG(3840, 2160);
-$('#bPng8').onclick = () => exportPNG(7680, 4320);
+const selName = () => floorSel === -1 ? 'ALL' : floorSel === -2 ? 'B1' : flName(floorSel);
+$('#bPng').onclick = () => VT.openExport('png4');
+$('#bSvg').onclick = () => VT.openExport('svg');
+$('#bPng8').onclick = () => VT.openExport('png8');
 // Rhino / OBJ: what is visible now; structure keeps its FBX group and layer, context goes under Context
 const CTX = { slabs: 'Slabs 261004', labels: 'Floor labels' };
 const visItems = () => collect([root], {
   layerOf: own => { const u = own.userData; return u.layer === 'str' ? `Structure::${u.grp}::${u.name}` : u.layer === 'occ' ? `Context::Programme volumes 261004::${CATS[u.cat]?.label || u.cat}` : CTX[u.layer] ? 'Context::' + CTX[u.layer] : null; },
-  zRange: floorSel >= 0 ? [L[floorSel].z - 0.05, (L[floorSel + 1]?.z ?? L[floorSel].z + 9) - 0.05] : null,
+  zRange: floorSel >= 0 ? [L[floorSel].z - 0.05, (L[floorSel + 1]?.z ?? L[floorSel].z + 9) - 0.05] : floorSel === -2 ? [(P.basementZ ?? 0) - 1, L[0].z + 0.5] : null,
 });
 $('#b3dm').onclick = async () => {
   toast('Loading rhino3dm…');
@@ -272,4 +277,7 @@ function placeLabels(list) {
   for (const s of list) { s.position.x = px; s.position.y = py; }
 }
 const labelSprites = root.children.filter(o => o.userData.layer === 'labels');
-renderer.setAnimationLoop(() => { controls.update(); placeLabels(labelSprites); scaleTags(); renderer.render(scene, camera); });
+const plateBox = (tris, z0, z1) => { const b = new THREE.Box3(); for (const t of tris) for (let k = 0; k < 6; k += 2) { b.expandByPoint(new THREE.Vector3(t[k], t[k + 1], z0)); b.expandByPoint(new THREE.Vector3(t[k], t[k + 1], z1)); } return b; };
+// Centre + drawing scale under the View buttons
+const VT = viewTools({ exp: { renderImage, svgItems: () => visItems(), fileStem: () => `2GBX_Structure_${selName()}_${stamp()}`, title: () => `DD-G01 HYPEROBJECT · Structure · ${selName() === 'ALL' ? 'All floors' : selName()}${VT.scale() && camera === ocam ? ' · ' + VT.scaleText() : ''}` }, view, ocam, pcam, controls, getCamera: () => camera, setOrtho: o => setProj(o), key: 'st', getBox: () => { if (floorSel >= 0) return plateBox(L[floorSel].tris, L[floorSel].z, L[floorSel + 1]?.z ?? L[floorSel].z + 9); if (floorSel === -2) return new THREE.Box3(new THREE.Vector3(bmin.x, bmin.y, (P.basementZ ?? 0) - 1), new THREE.Vector3(bmax.x, bmax.y, L[0].z)); return new THREE.Box3(bmin.clone(), bmax.clone()); } });
+renderer.setAnimationLoop(() => { controls.update(); VT.tick(); placeLabels(labelSprites); scaleTags(); renderer.render(scene, camera); });

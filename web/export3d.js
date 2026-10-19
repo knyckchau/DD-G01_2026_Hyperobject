@@ -9,7 +9,7 @@ const shown = o => { for (let p = o; p; p = p.parent) if (!p.visible) return fal
 const hex = c => '#' + (c?.getHexString ? c.getHexString() : '888888');
 
 // layerOf(o) -> 'Group::Layer' path or null to skip; zRange [z0, z1] keeps only geometry of one floor
-export function collect(roots, { layerOf, zRange = null }) {
+export function collect(roots, { layerOf, zRange = null, fallback = null, skip = null }) {   // skip: Set of objects (with their children) to leave out   // fallback: layer for objects with no tagged owner
   const out = []; let zr = null;   // zRange only trims objects not already assigned to a floor (cores, structure)
   const inZ = z => !zr || (z >= zr[0] && z <= zr[1]);
   const v = new THREE.Vector3(), w = new THREE.Vector3(), M = new THREE.Matrix4(), C = new THREE.Color();
@@ -17,16 +17,20 @@ export function collect(roots, { layerOf, zRange = null }) {
   const owner = o => { for (let p = o; p; p = p.parent) if (p.userData?.layer) return p; return null; };
   roots.forEach(r => r.traverse(o => {
     if (!(o.isMesh || o.isLine || o.isLineSegments || o.isSprite) || !shown(o)) return;
-    const own = owner(o); if (!own) return;
-    const layer = layerOf(own, o); if (!layer) return;
-    zr = own.userData.fl == null ? zRange : null;
-    const col = hex(o.material?.color);
-    if (o.isSprite) { if (o.userData.text) { o.getWorldPosition(v); if (inZ(v.z)) out.push({ kind: 'text', layer, col, text: o.userData.text, p: v.toArray() }); } return; }
-    if (o.userData.poly) { const pts = o.userData.poly.filter(p => inZ(p[2])); if (pts.length > 1) out.push({ kind: 'line', layer, col, pts }); return; }
+    if (skip) for (let p = o; p; p = p.parent) if (skip.has(p)) return;
+    if (o.userData.noExport) return;   // display-only helpers
+    const own = owner(o); if (!own && !fallback) return;
+    const layer = own ? layerOf(own, o) : fallback; if (!layer) return;
+    zr = own?.userData.fl == null ? zRange : null;
+    const mat = o.material, col = hex(mat?.color), op = mat?.transparent ? mat.opacity ?? 1 : 1;   // op, lw, dash: used by the SVG export
+    const wu = mat?.worldUnits ? 1 : 0, lw = mat?.isLineMaterial ? mat.linewidth : 1, dash = mat?.dashed || mat?.isLineDashedMaterial ? (mat.dashSize >= 2 ? 2 : 1) : 0,   // 2 = long dashes
+      look = o.userData.polyStyle || '';
+    if (o.isSprite) { if (o.userData.text) { o.getWorldPosition(v); if (inZ(v.z)) out.push({ kind: 'text', layer, col, text: o.userData.text, p: v.toArray(), off: o.userData.off || null, rot: o.material?.rotation || 0, ctr: [o.center.x, o.center.y], along: !!o.userData.along }); } return; }
+    if (o.userData.poly) { const pts = o.userData.poly.filter(p => inZ(p[2])); if (pts.length > 1) out.push({ kind: 'line', layer, col, op, lw, dash, look, pts }); return; }
     if (o.isLineSegments2) {   // fat lines: consecutive segments in instanceStart / instanceEnd
       const s = o.geometry.attributes.instanceStart, e = o.geometry.attributes.instanceEnd; if (!s) return;
       let pts = [];
-      const flush = () => { if (pts.length > 1) out.push({ kind: 'line', layer, col, pts }); pts = []; };
+      const flush = () => { if (pts.length > 1) out.push({ kind: 'line', layer, col, op, lw, wu, dash, pts }); pts = []; };
       for (let i = 0; i < s.count; i++) {
         v.set(s.getX(i), s.getY(i), s.getZ(i)).applyMatrix4(o.matrixWorld); w.set(e.getX(i), e.getY(i), e.getZ(i)).applyMatrix4(o.matrixWorld);
         if (!inZ((v.z + w.z) / 2)) { flush(); continue; }
@@ -40,8 +44,8 @@ export function collect(roots, { layerOf, zRange = null }) {
     if (o.isLine || o.isLineSegments) {
       const step = o.isLineSegments ? 2 : 1, n = g.index ? g.index.count : pos.count, ix = i => g.index ? g.index.getX(i) : i;
       const P = i => v.set(pos.getX(ix(i)), pos.getY(ix(i)), pos.getZ(ix(i))).applyMatrix4(o.matrixWorld).toArray();
-      if (o.isLineSegments) for (let i = 0; i + 1 < n; i += step) { const a = P(i), b = P(i + 1); if (inZ((a[2] + b[2]) / 2)) out.push({ kind: 'line', layer, col, pts: [a, b] }); }
-      else { const pts = []; for (let i = 0; i < n; i++) pts.push(P(i)); if (pts.some(p => inZ(p[2]))) out.push({ kind: 'line', layer, col, pts }); }
+      if (o.isLineSegments) for (let i = 0; i + 1 < n; i += step) { const a = P(i), b = P(i + 1); if (inZ((a[2] + b[2]) / 2)) out.push({ kind: 'line', layer, col, op, lw, dash, pts: [a, b] }); }
+      else { const pts = []; for (let i = 0; i < n; i++) pts.push(P(i)); if (pts.some(p => inZ(p[2]))) out.push({ kind: 'line', layer, col, op, lw, dash, pts }); }
       return;
     }
     // meshes; instanced meshes are merged into one mesh, with per-vertex colours when instances are coloured
@@ -57,14 +61,14 @@ export function collect(roots, { layerOf, zRange = null }) {
       for (let i = 0; i < loc.length; i++) V.push(loc[i]); for (let i = 0; i < keep.length; i++) F.push(base + keep[i]);
       if (VC) for (let i = 0; i < pos.count; i++) VC.push(C.r, C.g, C.b);
     }
-    if (F.length) out.push({ kind: 'mesh', layer, col, v: V, f: F, vc: VC });
+    if (F.length) out.push({ kind: 'mesh', layer, col, op, v: V, f: F, vc: VC });
   }));
   return out;
 }
 
 // Wavefront OBJ + MTL (one material per layer colour; text items are skipped, OBJ has no text)
-export function toOBJ(items, base, title) {
-  let obj = `# ${title} · units: metres, Z up\nmtllib ${base}.mtl\n`, mtl = '', off = 1, n = 0; const used = {};
+export function toOBJ(items, base, title, off = 1, header = true) {   // off: first vertex index when appending to another OBJ
+  let obj = header ? `# ${title} · units: metres, Z up\nmtllib ${base}.mtl\n` : '', mtl = '', n = 0; const used = {};
   const key = s => s.replace(/[^\w]+/g, '_');
   for (const it of items) {
     if (it.kind === 'text') continue;
@@ -84,17 +88,10 @@ export function toOBJ(items, base, title) {
 }
 
 // Rhino .3dm: nested layers from the 'A::B::C' paths, meshes, polylines and text dots, object colours kept
-export async function to3dm(items) {
-  rhinoP ||= import(RHINO + 'rhino3dm.module.min.js').then(m => m.default({ locateFile: f => RHINO + f }));
-  const rhino = await rhinoP, doc = new rhino.File3dm(); doc.settings().modelUnitSystem = rhino.UnitSystem.Meters;
-  const rgb = h => { const c = new THREE.Color(h); return { r: Math.round(c.r * 255), g: Math.round(c.g * 255), b: Math.round(c.b * 255), a: 255 }; };
-  const layers = {};
-  const layer = (path, col) => {
-    if (layers[path] != null) return layers[path];
-    const parts = path.split('::'), L = new rhino.Layer(); L.name = parts[parts.length - 1]; L.color = rgb(col);
-    if (parts.length > 1) L.parentLayerId = doc.layers().findIndex(layer(parts.slice(0, -1).join('::'), col)).id;
-    return layers[path] = doc.layers().add(L);
-  };
+export const rhinoLib = () => (rhinoP ||= import(RHINO + 'rhino3dm.module.min.js').then(m => m.default({ locateFile: f => RHINO + f })));
+const rgb = h => { const c = new THREE.Color(h); return { r: Math.round(c.r * 255), g: Math.round(c.g * 255), b: Math.round(c.b * 255), a: 255 }; };
+// adds collected items to an open File3dm; layer(path, colour) returns the layer index
+export function addTo3dm(rhino, doc, items, layer) {
   let n = 0;
   for (const it of items) {
     const a = new rhino.ObjectAttributes(); a.layerIndex = layer(it.layer, it.col);
@@ -111,5 +108,17 @@ export async function to3dm(items) {
     if (it.vc) for (let i = 0; i < it.vc.length; i += 3) m.vertexColors().add(Math.round(it.vc[i] * 255), Math.round(it.vc[i + 1] * 255), Math.round(it.vc[i + 2] * 255));
     m.normals().computeNormals(); m.compact(); doc.objects().add(m, a); n++;
   }
+  return n;
+}
+export async function to3dm(items) {
+  const rhino = await rhinoLib(), doc = new rhino.File3dm(); doc.settings().modelUnitSystem = rhino.UnitSystem.Meters;
+  const layers = {};
+  const layer = (path, col) => {
+    if (layers[path] != null) return layers[path];
+    const parts = path.split('::'), L = new rhino.Layer(); L.name = parts[parts.length - 1]; L.color = rgb(col);
+    if (parts.length > 1) L.parentLayerId = doc.layers().findIndex(layer(parts.slice(0, -1).join('::'), col)).id;
+    return layers[path] = doc.layers().add(L);
+  };
+  const n = addTo3dm(rhino, doc, items, layer);
   return { bytes: doc.toByteArray(), n };
 }

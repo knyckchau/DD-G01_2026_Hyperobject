@@ -5,6 +5,8 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:13px/1
 header{height:46px;display:flex;align-items:center;gap:14px;padding:0 14px;border-bottom:1px solid var(--line);background:var(--panel)}
 header h1{font-size:14px;margin:0;font-weight:600;letter-spacing:.02em}
 header .sub{color:var(--mute);font-size:12px}
+header h1,header .sub,nav.pg a{white-space:nowrap}header>*{flex-shrink:0}
+header>.sub:first-of-type{flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis}   /* narrow windows: the address truncates, nothing wraps */
 header .sp{flex:1}
 nav.pg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
 nav.pg a{padding:5px 12px;text-decoration:none;color:var(--mute);font-size:12.5px}
