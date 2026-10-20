@@ -173,6 +173,28 @@ function pull(g, pts, walk = g.walk) {
   return { pts: out, len };
 }
 
+// ---------- separated occupancies (Table 508.4, sprinklered building) ----------
+// hours of fire barrier between two groups; A sub-groups need none between them, nor B and M
+export function sepHours(a, b) {
+  const x = a[0], y = b[0], k = [x, y].sort().join('');
+  if (x === y) return 0;
+  return ({ AB: 1, AM: 1, BM: 0, AS: 1, BS: 1, MS: 1, AE: 0, BE: 1, EM: 1 })[k] ?? 1;
+}
+const inTris = (tris, x, y) => { for (const t of tris) { const d1 = (x - t[2]) * (t[1] - t[3]) - (t[0] - t[2]) * (y - t[3]), d2 = (x - t[4]) * (t[3] - t[5]) - (t[2] - t[4]) * (y - t[5]), d3 = (x - t[0]) * (t[5] - t[1]) - (t[4] - t[0]) * (y - t[1]);
+  if (!((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0))) return true; } return false; };
+// plan outline of a volume: the boundary edges of its bottom face, minus the edges on the building exterior (one side outside the floor plate)
+function barrierSegs(vm, plate) {
+  const v = vm.v, t = vm.t; let zmin = Infinity; for (let i = 2; i < v.length; i += 3) zmin = Math.min(zmin, v[i]);
+  const cnt = new Map(), K = (a, b) => a < b ? a + ',' + b : b + ',' + a, P = i => [v[i * 3], v[i * 3 + 1]];
+  for (let n = 0; n < t.length; n += 3) { const f = [t[n], t[n + 1], t[n + 2]]; if (f.some(k => Math.abs(v[k * 3 + 2] - zmin) > 0.05)) continue;
+    for (let e = 0; e < 3; e++) { const k = K(f[e], f[(e + 1) % 3]); cnt.set(k, (cnt.get(k) || 0) + 1); } }
+  const out = [];
+  for (const [k, c] of cnt) { if (c !== 1) continue; const [a, b] = k.split(',').map(Number), p = P(a), q = P(b), L = Math.hypot(q[0] - p[0], q[1] - p[1]); if (L < 0.3) continue;
+    const mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2, nx = -(q[1] - p[1]) / L * 0.5, ny = (q[0] - p[0]) / L * 0.5;
+    if (!inTris(plate, mx + nx, my + ny) || !inTris(plate, mx - nx, my - ny)) continue;   // exterior wall
+    out.push([p[0], p[1], q[0], q[1]]); }
+  return out;
+}
 const exitsRequired = occ => occ <= 0 ? 0 : occ <= 500 ? 2 : occ <= 1000 ? 3 : 4;   // NYC BC Table 1006.3.1
 const worst = s => s.includes('fail') ? 'fail' : s.includes('warn') ? 'warn' : s.includes('info') ? 'info' : 'ok';
 
@@ -180,7 +202,7 @@ const worst = s => s.includes('fail') ? 'fail' : s.includes('warn') ? 'warn' : s
 // Layers follow the core model convention: 02_PASSENGER_ELEVATORS, 03_FREIGHT_ELEVATOR, 04_LOBBY_AREAS.
 // Meshes are split into connected pieces, then pieces that overlap in plan are merged into vertical columns.
 export function clusterDetail(D, levelZ = []) {
-  const out = { elevators: [], lobbies: [], walls: levelZ.map(() => []) };
+  const out = { elevators: [], lobbies: [], walls: levelZ.map(() => []), coreWalls: levelZ.map(() => []) };   // walls: all cut walls (routing); coreWalls: 00_WALLS only (drawn; restroom partitions are not)
   if (!D) return out;
   const dec = (s, T) => { const bin = atob(s), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new T(u.buffer); };
   const cols = l => {
@@ -210,12 +232,12 @@ export function clusterDetail(D, levelZ = []) {
         levelZ.forEach((lz, li) => {
           const zs = lz + 1.0; if (zs <= zl || zs >= zh) return;
           const c = []; for (let a = 0; a < 3; a++) { const A = p[a], B = p[(a + 1) % 3]; if ((A[2] - zs) * (B[2] - zs) < 0) { const f = (zs - A[2]) / (B[2] - A[2]); c.push(A[0] + (B[0] - A[0]) * f, A[1] + (B[1] - A[1]) * f); } }
-          if (c.length === 4) out.walls[li].push(...c);
+          if (c.length === 4) { out.walls[li].push(...c); if (l.name === '00_WALLS') out.coreWalls[li].push(...c); }
         });
       }
     }
   }
-  out.walls = out.walls.map(w => new Float32Array(w));
+  out.walls = out.walls.map(w => new Float32Array(w)); out.coreWalls = out.coreWalls.map(w => new Float32Array(w));
   const wl = D.layers.find(l => l.name === '00_WALLS');   // core wall vertices: the modelled height of each shaft
   if (wl) { const q = dec(wl.v, Int16Array), v = new Float32Array(q.length); for (let i = 0; i < q.length; i++) v[i] = q[i] / 100 + D.origin[i % 3]; out.coreV = v; }
   out.elevators.sort((a, b) => a.b[0] - b.b[0] || a.b[1] - b.b[1]).forEach((e, i) => e.id = 'E' + (i + 1));
@@ -277,7 +299,16 @@ export function lifeSafety(P, A, model, G = {}) {
     const grpOf = cat => (cat && model.cats?.[cat]?.grp) || null;
     const groups = [...new Set(f.zones.map(zn => grpOf(zn.cat)).filter(g => g && g !== '-'))];
     const vols = P.volumes.filter(v => v.floor === i);
-    const multi = vols.filter(v => v.zmax > zNext + 0.5);
+    // fire barriers between separated occupancies: the groups other than the floor's main one (largest area) that need a rated separation from it are enclosed
+    const sep = []; { const area = {}; f.zones.forEach(zn => { const g = grpOf(zn.cat); if (g && g !== '-') area[g] = (area[g] || 0) + zn.area; });
+      const main = Object.keys(area).sort((a, b) => area[b] - area[a])[0];
+      for (const g of Object.keys(area)) { const hr = main && g !== main ? sepHours(main, g) : 0; if (!hr) continue;
+        const ids = f.zones.filter(zn => grpOf(zn.cat) === g).map(zn => zn.id);
+        sep.push({ main, grp: g, hr, ids, segs: ids.flatMap(id => { const vm = P.volMeshes.find(m => m.id === id); return vm ? barrierSegs(vm, L[i].tris) : []; }) }); } }
+    // atrium (three or more storeys): 1-hr fire barrier on every floor it opens onto when more than three storeys open to it (§404.6, exception 2)
+    for (const v of P.volumes) { const fl = L.map((l, k) => k).filter(k => L[k].z >= v.zmin - 0.3 && L[k].z < v.zmax - 0.5);
+      if (fl.length > 3 && fl.includes(i)) { const vm = P.volMeshes.find(m => m.id === v.id); if (vm) sep.push({ atrium: true, hr: 1, ids: [v.id], segs: barrierSegs(vm, L[i].tris) }); } }
+    const multi = vols.filter(v => v.zmax > zNext + 0.5), atrium = vols.filter(v => v.zmax > (L[i + 2]?.z ?? Infinity) + 0.5);   // atrium: three or more storeys; two-storey openings (§712.1.9) carry no atrium travel limit
     const pts = uniq(L[i]);
     const D = maxDiag(pts), diag = D.d * FT, sepReq = diag * A.sepFraction;
     // walkable floor plate: slab minus hoistways and shafts; walking distance to each stair that the slab reaches
@@ -372,10 +403,10 @@ export function lifeSafety(P, A, model, G = {}) {
       st.cpet = !zones.length ? 'ok' : zones.some(z => z.cpStatus === 'fail') ? 'fail' : 'ok';
       st.sep = nExits < 2 ? 'fail' : sepEdge >= sepReq ? 'ok' : 'fail';   // measured door to door; centre-to-centre is reported only
       st.travel = travel == null || unreachM2 > 2 || zones.some(z => z.status === 'fail') ? 'fail' : travel > lim1 || (lim2 && travel2 != null && travel2 > lim2) ? 'fail'
-        : multi.length && travel > A.travelAtrium ? 'fail' : 'ok';
+        : atrium.length && travel > A.travelAtrium ? 'fail' : 'ok';
     }
     const row = { heat: new Float32Array(heat), heatCell: CELL * 2, idx: i, name: f.name, z, ft: (z - z0) * FT, occ, occByGrp: f.occByGrp, groups, req, stairs: reach.map(x => x.s.id), cut, unreachM2, unreachCells, cell: CELL, walled: !!G.walls?.[i], walkM2: walkN * CELL * CELL, nExits, cap, capReqIn: occ * A.stairFactor,
-      diag, diagPts: [D.a, D.b], sepReq, sepEdge, sepCtr, pair, travel, travel2, lim1, lim2, far, far2, zones, cpet: zc?.cpet ?? null, cpLim: zc?.cpLim ?? A.cpetA, cpZone: zc?.id, cutDoors, multi: multi.map(v => v.cat), grade, roof: i === roofIdx, st,
+      diag, diagPts: [D.a, D.b], sepReq, sepEdge, sepCtr, pair, travel, travel2, lim1, lim2, far, far2, zones, cpet: zc?.cpet ?? null, cpLim: zc?.cpLim ?? A.cpetA, cpZone: zc?.id, cutDoors, sep, multi: multi.map(v => v.cat), grade, roof: i === roofIdx, st,
       status: grade && occ ? 'info' : worst(Object.values(st)) };
     // level of exit discharge: its exits are the exterior doors (§1007.1.1, §1028), which the model does not contain.
     // Routes, spacing and capacity measured to the stairs do not apply here, so they are dropped rather than shown.
@@ -414,13 +445,15 @@ export function lifeSafety(P, A, model, G = {}) {
     it('info', 'Occupant evacuation elevators', 'Permitted but not required (§403.6.2); if provided, §3008 applies.', 'NYC BC §403.6.2, §3008', 'oee');
   }
   const multiAll = rows.filter(r => r.multi.length);
-  if (multiAll.length) it('info', 'Multi-storey volumes (atrium / vertical opening)', `Volumes spanning more than one storey: ${multiAll.map(r => `${r.name} (${r.multi.join(', ')})`).join(' · ')}. Treat as atrium (smoke control, enclosure, ≤ ${A.travelAtrium} ft of travel within the atrium) or enclose as shafts.`, 'NYC BC §404, §404.9.3, §712', 'atr');
+  if (multiAll.length) { const span = v => L.filter(l => l.z >= v.zmin - 0.3 && l.z < v.zmax - 0.5).length, vs = P.volumes.filter(v => span(v) > 1), two = vs.filter(v => span(v) === 2), atr = vs.filter(v => span(v) > 2);
+    it('info', 'Two-storey openings (§712.1.9)', `${two.length ? `${two.length} volumes connect exactly two storeys (${multiAll.map(r => `${r.name} ${r.multi.join(', ')}`).join(' · ')}): two-storey floor openings under §712.1.9, not atria. No shaft enclosure, fire barrier or smoke control is needed, provided the opening connects only those two storeys, is not part of the required means of egress and is separated from corridors.` : ''}${atr.length ? ` ${atr.map(v => v.id).join(', ')} connect three or more storeys and are atria (§404): smoke control, and a 1-hr fire barrier where more than three storeys open to it (§404.6).` : ''}`, 'NYC BC §712.1.9, §404', 'atr'); }
   const imm = P.volumes.filter(v => v.cat === 'immersive');
-  if (imm.length) it('info', 'Immersive halls — special amusement', `${imm.length} immersive halls (${[...new Set(imm.map(v => v.floor))].sort((a, b) => a - b).map(i => F[i]?.name).join(', ')}). If the egress path is not readily apparent (darkened, LED-enclosed), §411 applies: Group A (75 or more occupants), automatic fire detection, exit marking, voice alarm.`, 'NYC BC §411.1', 'imm');
+  if (imm.length) it('info', 'Immersive venues (§411 special amusement area)', `${imm.length} immersive venues (${[...new Set(imm.map(v => v.floor))].sort((a, b) => a - b).map(i => F[i]?.name).join(', ')}) are A-3 exhibition space unless the show makes the way out hard to see or reach (darkness, disorienting light or sound, a confounded route). Then they are special amusement areas under §411: automatic sprinklers, automatic fire detection, an alarm that turns on egress lighting and stops the show, voice alarm with recorded exit directions, directional and low-level exit marking, Class A interior finish; Group A at 75 or more occupants.`, 'NYC BC §411.1', 'imm');
   const aud = P.volumes.filter(v => v.cat === 'auditorium');
   if (aud.length) it('info', 'Auditorium', `${aud.length} auditorium volume(s) on ${[...new Set(aud.map(v => F[v.floor]?.name))].join(', ')}; occupant load ${A.auditoriumSeats > 0 ? `= ${A.auditoriumSeats} fixed seats (§1004.3)` : 'at 7 net (chairs only)'}. Aisles, main exit and travel per §1029.`, 'NYC BC §1004.3, §1029', 'aud');
   const grpAll = [...new Set(rows.flatMap(r => r.groups))].sort();
-  if (grpAll.length > 1) it('info', 'Mixed occupancy', `Groups in the model: ${grpAll.join(', ')}. With separated occupancies each pair needs fire barriers per Table 508.4 (sprinklered values). Floors with more than one group: ${rows.filter(r => r.groups.length > 1).map(r => `${r.name} (${r.groups.join('/')})`).join(' · ') || 'none'}.`, 'NYC BC §508.4, Table 508.4', 'mix');
+  if (grpAll.length > 1) { const occSep = r => r.sep.filter(x => !x.atrium), need = rows.filter(r => occSep(r).length), none = rows.filter(r => r.groups.length > 1 && !occSep(r).length);
+    it('info', 'Mixed occupancy', `Groups in the model: ${grpAll.join(', ')}. If the occupancies are separated (§508.4, sprinklered values of Table 508.4), fire barriers are needed on ${need.length ? need.map(r => `${r.name} (${occSep(r).map(x => `${x.hr}-hr around ${x.grp}`).join(', ')})`).join(' · ') : 'no floor'}${none.length ? `; ${none.map(r => r.name + ' (' + r.groups.join('/') + ')').join(' · ')} need none, since A sub-groups are not separated from each other` : ''}. As nonseparated occupancies (§508.3) no barriers are needed, but each floor is then checked against its most restrictive group.`, 'NYC BC §508.3, §508.4, Table 508.4', 'mix'); }
   const ur = rows.filter(r => r.unreachM2 > 2 && !r.roof);
   if (ur.length) it('fail', 'Floor area with no path to an exit stair', `Walking on the floor plate only, around walls and through openings: ${ur.map(r => `${r.name} ${Math.round(r.unreachM2)} m²`).join(' · ')}. Either the area is enclosed without a door in the model or it is cut off from every stair.`, 'NYC BC §1006.3, §1016', 'ur');
   const cutAll = rows.filter(r => r.cut.length);

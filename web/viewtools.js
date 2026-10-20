@@ -15,11 +15,19 @@ const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(
 // exp: { renderImage(w, h) -> canvas with transparent background, svgItems() -> export3d items, title(), fileStem() }
 // Raster export, drawn in tiles of at most 2048 px: a single large WebGL canvas can be silently clamped by the browser or GPU,
 // which crops or rescales the drawing. Pixel-width lines are widened by the output scale so the image looks like the screen.
+// dot (stipple) fill for programme volumes: screen-space dot grid, so stacked volumes do not darken; DOTFILL.px = device px per CSS px (export: output px per screen px)
+export const DOTFILL = { px: { value: 1 } };
+export function dotMaterial(color, opacity) {
+  const m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.FrontSide });
+  m.onBeforeCompile = sh => { sh.uniforms.uDotPx = DOTFILL.px; sh.fragmentShader = 'uniform float uDotPx;\n' + sh.fragmentShader.replace('#include <dithering_fragment>',
+    '#include <dithering_fragment>\n  { vec2 q = gl_FragCoord.xy / uDotPx; float r = floor(q.y / 5.0); vec2 c = vec2(mod(q.x + mod(r, 2.0) * 2.5, 5.0), mod(q.y, 5.0)) - 2.5; if (dot(c, c) > 0.3) discard; }'); };
+  m.customProgramCacheKey = () => 'dotfill'; m.userData.dots = true; return m;
+}
 export function renderTiled({ renderer, scene, camera, view, w, h, rect, lineMats = [], before = null, after = null }) {
   w = Math.min(w, 16384); h = Math.min(h, 16384);
   const vw = view.clientWidth, vh = view.clientHeight, pr = renderer.getPixelRatio(), k = w / rect.w, T = 2048;
   const out = document.createElement('canvas'); out.width = w; out.height = h; const ctx = out.getContext('2d');
-  const lw = lineMats.map(m => m.linewidth); lineMats.forEach(m => { if (!m.worldUnits) m.linewidth *= k; });
+  const lw = lineMats.map(m => m.linewidth), dpx = DOTFILL.px.value; DOTFILL.px.value = k; lineMats.forEach(m => { if (!m.worldUnits) m.linewidth *= k; });
   before?.(); const bg = scene.background; scene.background = null; renderer.setPixelRatio(1); renderer.setClearColor(0x000000, 0);
   for (let ty = 0; ty < h; ty += T) for (let tx = 0; tx < w; tx += T) {
     const tw = Math.min(T, w - tx), th = Math.min(T, h - ty);
@@ -27,7 +35,7 @@ export function renderTiled({ renderer, scene, camera, view, w, h, rect, lineMat
     camera.setViewOffset(vw, vh, rect.x + tx / k, rect.y + ty / k, tw / k, th / k);
     renderer.render(scene, camera); ctx.drawImage(renderer.domElement, 0, 0, tw, th, tx, ty, tw, th);
   }
-  camera.clearViewOffset(); scene.background = bg; lineMats.forEach((m, i) => m.linewidth = lw[i]);
+  camera.clearViewOffset(); scene.background = bg; DOTFILL.px.value = dpx; lineMats.forEach((m, i) => m.linewidth = lw[i]);
   renderer.setPixelRatio(pr); renderer.setSize(vw, vh, false); renderer.domElement.style.width = vw + 'px'; renderer.domElement.style.height = vh + 'px'; after?.();
   return out;
 }
@@ -191,21 +199,23 @@ export function viewTools({ view, ocam, pcam, controls, getCamera, setOrtho, get
     const v = new THREE.Vector3();
     const P = p => { v.set(p[0], p[1], p[2]).project(cam); return [(v.x + 1) / 2 * VW - R.x, (1 - v.y) / 2 * VH - R.y, v.z]; };
     const f = n => Math.round(n * 10) / 10, out = [], lines = [], texts = [];
-    const meshes = [];
+    const meshes = [], pats = new Map();   // dot-fill patterns by colour, on one user-space grid so overlapping faces do not darken
     for (const it of items) {
       if (it.kind === 'mesh') {
         const pv = []; for (let i = 0; i < it.v.length; i += 3) pv.push(P([it.v[i], it.v[i + 1], it.v[i + 2]]));
-        const groups = new Map(); let zsum = 0, zn = 0;
+        const groups = new Map(); let zsum = 0, zn = 0, znear = Infinity;
         for (let i = 0; i < it.f.length; i += 3) {
-          const a = pv[it.f[i]], b = pv[it.f[i + 1]], c = pv[it.f[i + 2]];
+          const a = pv[it.f[i]]; let b = pv[it.f[i + 1]], c = pv[it.f[i + 2]];
+          if ((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]) < 0) [b, c] = [c, b];   // one winding on screen: with nonzero fill, a top and a bottom face no longer cancel into a hole
           if ([a, b, c].some(q => q[2] < -1 || q[2] > 1)) continue;
           if (Math.max(a[0], b[0], c[0]) < 0 || Math.min(a[0], b[0], c[0]) > W || Math.max(a[1], b[1], c[1]) < 0 || Math.min(a[1], b[1], c[1]) > H) continue;
           if (Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) < 0.04) continue;
           const col = it.vc ? '#' + new THREE.Color(it.vc[it.f[i] * 3], it.vc[it.f[i] * 3 + 1], it.vc[it.f[i] * 3 + 2]).getHexString() : it.col;
           let d = groups.get(col); if (!d) groups.set(col, d = []);
-          d.push(`M${f(a[0])} ${f(a[1])}L${f(b[0])} ${f(b[1])}L${f(c[0])} ${f(c[1])}Z`); zsum += a[2] + b[2] + c[2]; zn += 3;
+          d.push(`M${f(a[0])} ${f(a[1])}L${f(b[0])} ${f(b[1])}L${f(c[0])} ${f(c[1])}Z`); zsum += a[2] + b[2] + c[2]; zn += 3; znear = Math.min(znear, a[2], b[2], c[2]);
         }
-        if (zn) meshes.push({ z: zsum / zn, svg: `<g opacity="${f(it.op ?? 1) || 0.1}" data-layer="${esc(it.layer)}">${[...groups].map(([c, d]) => `<path fill="${c}" d="${d.join('')}"/>`).join('')}</g>` });
+        const fill = c => { if (!it.dots) return c; const id = 'dot' + c.slice(1); if (!pats.has(id)) pats.set(id, `<pattern id="${id}" width="5" height="5" patternUnits="userSpaceOnUse"><circle cx="1.25" cy="1.25" r="0.55" fill="${c}"/><circle cx="3.75" cy="3.75" r="0.55" fill="${c}"/></pattern>`); return `url(#${id})`; };
+        if (zn) meshes.push({ z: it.dots ? znear : zsum / zn, svg: `<g opacity="${f(it.op ?? 1) || 0.1}" data-layer="${esc(it.layer)}">${[...groups].map(([c, d]) => `<path fill="${fill(c)}" d="${d.join('')}"/>`).join('')}</g>` });
       } else if (it.kind === 'line') {
         if (it.look === 'triU' || it.look === 'triD') {   // vertical run of triangles pointing along the line
           const [a0, b0] = it.pts, L = Math.hypot(b0[0] - a0[0], b0[1] - a0[1], b0[2] - a0[2]), n = Math.max(1, Math.round(L / 1.0)), pa = P(a0), pb = P(b0);   // same as the view: a 0.5 m triangle every 1 m (one arrow of gap)
@@ -248,7 +258,7 @@ export function viewTools({ view, ocam, pcam, controls, getCamera, setOrtho, get
     const scaled = measurable(), TW = Math.ceil(Ly.TW), TH = Math.ceil(Ly.TH);
     return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${(TW / CSS_DPI).toFixed(3)}in" height="${(TH / CSS_DPI).toFixed(3)}in" viewBox="0 0 ${TW} ${TH}">`
       + `<desc>${esc(o.titleText || '')} · ${scaled ? scaleText() + ' when printed at 100 %' : 'not to scale (axonometric or perspective view)'}</desc>`
-      + `<defs><clipPath id="vp"><rect width="${W}" height="${H}"/></clipPath></defs><g transform="translate(0 ${th})"><g clip-path="url(#vp)" data-name="drawing">${out.join('')}${lines.join('')}${texts.join('')}</g></g>${ov.join('')}</svg>`;
+      + `<defs><clipPath id="vp"><rect width="${W}" height="${H}"/></clipPath>${[...pats.values()].join('')}</defs><g transform="translate(0 ${th})"><g clip-path="url(#vp)" data-name="drawing">${out.join('')}${lines.join('')}${texts.join('')}</g></g>${ov.join('')}</svg>`;
   }
   function svgSwatch(s, X, Y, w, h) {
     const f = n => Math.round(n * 10) / 10;

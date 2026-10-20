@@ -8,11 +8,11 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
-import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261019g'; // keep in step with APP_V in ls.html
-import { viewTools, renderTiled } from './viewtools.js?v=20261019g';
-import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261019g';
-import { LS_Q } from './ls-codes.js?v=20261019g';
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261019g';
+import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261019v'; // keep in step with APP_V in ls.html
+import { viewTools, renderTiled, dotMaterial, DOTFILL } from './viewtools.js?v=20261019v';
+import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261019v';
+import { LS_Q } from './ls-codes.js?v=20261019v';
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261019v';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -34,13 +34,13 @@ const flName = i => i === -1 ? 'B1' : i === roofIdx ? 'RT' : 'L' + String(i + 1)
 const STC = { ok: '#2b8a3e', warn: '#e67700', fail: '#c92a2a', info: '#5c7cfa' };
 const GRPCOL = { 'A-1': '#d6336c', 'A-2': '#f76707', 'A-3': '#f2b705', B: '#339af0', M: '#9775fa', '-': '#adb5bd' };
 const grpOf = cat => C[cat]?.grp || '-';
-const COLR = { stair: '#2b8a3e', vest: '#12b886', elev: '#495057', fse: '#e03131', elobby: '#4dabf7', sp: '#a61e4d', atr: '#fd7e14', imm: '#7048e8', tech: '#e8b04a', fcc: '#1971c2' };
+const COLR = { stair: '#2b8a3e', vest: '#12b886', elev: '#495057', fse: '#e03131', elobby: '#4dabf7', sp: '#a61e4d', atr: '#fd7e14', imm: '#7048e8', tech: '#e8b04a', fcc: '#1971c2', fb: '#c92a2a' };
 const MARK = { ok: '✓', warn: '!', fail: '✕', info: 'i' };
 
 // ---------- three setup ----------
 const view = $('#view');
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
-renderer.localClippingEnabled = true; renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+renderer.localClippingEnabled = true; renderer.setPixelRatio(Math.min(2, devicePixelRatio)); DOTFILL.px.value = renderer.getPixelRatio();
 view.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 const BG = { light: new THREE.Color('#f7f7f4'), dark: new THREE.Color('#15171a') };
@@ -63,7 +63,7 @@ const LAYERS = [
   ['Vertical exits', [['stairs', 'Exit stair enclosures', 1, COLR.stair], ['stairGeo', 'Stair flights (core model)', 0], ['stairTags', 'Stair ID tags', 1], ['vest', 'Smokeproof vestibules', 1, COLR.vest], ['roof', 'Stairway to roof', 1, 'tup:' + STC.fail], ['base', 'Basement exits', 1, 'tdn:' + STC.fail], ['cutdoor', 'Stair doors opening onto no floor', 1, STC.fail]]],
   ['Horizontal egress', [['heat', 'Walking distance to nearest exit (map)', 0, 'grad'], ['paths', 'Path of travel (most remote point of each space → nearest exit)', 1, 'oline:' + STC.ok], ['cpet', 'Common path of egress travel', 1, 'cline:' + STC.ok], ['travel2', 'Second exit path (Group A)', 0, 'pline:' + STC.ok], ['sep', 'Exit separation vs ⅓ diagonal', 0, 'chline:#868e96'], ['unreach', 'Floor with no path to a stair', 1, STC.fail]]],
   ['Elevators', [['elev', 'Elevator cars', 1, COLR.elev], ['fse', 'Fire service access elevator', 1, COLR.fse], ['elobby', 'Elevator lobby', 1, COLR.elobby]]],
-  ['Hazards & separation', [['atrium', 'Multi-storey volumes (atrium)', 1, COLR.atr], ['imm', 'Immersive halls (§411)', 0, COLR.imm], ['mix', 'Mixed-occupancy floors (§508.4)', 0, 'dline:' + STC.fail]]],
+  ['Hazards & separation', [['imm', 'Immersive venues (§411 special amusement area)', 0, COLR.imm], ['mix', 'Fire barrier', 0, COLR.fb]]],
   ['Context', [['shell', 'Basement / site context', 0], ['tech', 'Basement technical rooms', 1, COLR.tech]]],
 ];
 const SVGL = (stroke, w, dash = '', cap = 'butt', op = 1) => `<svg width="22" height="10" style="vertical-align:middle;flex:none"><line x1="2" y1="5" x2="20" y2="5" stroke="${stroke}" stroke-width="${w}" ${dash ? `stroke-dasharray="${dash}"` : ''} stroke-linecap="${cap}" opacity="${op}"/></svg>`;
@@ -96,9 +96,8 @@ const LEG = {
   elev: [1, BOX(COLR.elev, 0.5, COLR.elev), 'Elevator car'],
   fse: [1, OUT(COLR.fse), 'Fire service access elevator'],
   elobby: [1, BOX(COLR.elobby, 0.45, COLR.elobby), 'Elevator lobby'],
-  atrium: [1, OUT(COLR.atr), 'Multi-storey volume (atrium)'],
-  imm: [1, BOX(COLR.imm, 0.35), 'Immersive hall (§411)'],
-  mix: [2, SVGL(STC.fail, 2.2, '7 2'), 'Mixed-occupancy floor (§508.4)'],
+  imm: [1, BOX(COLR.imm, 0.35), 'Immersive venues (§411 special amusement area)'],
+  mix: [1, BOX(COLR.fb, 0.75, COLR.fb), 'Fire barrier'],
   shell: [1, BOX('#bfc3c8', 0.4, '#9a9fa6'), 'Basement / site context'],
   tech: [1, BOX(COLR.tech, 0.35, COLR.tech), 'Basement technical room'],
 };
@@ -107,13 +106,13 @@ const savedLay = LS('ls.layers') || {};
 const sw = s => !s ? '' : s === 'grad' ? '<span class="sw" style="width:16px;background:linear-gradient(90deg,#d3f9d8,#ffe066,#f76707,#c92a2a)"></span>' : s.startsWith('cline:') ? `<span class="ln" style="border-color:${s.slice(6)};border-top-width:2.24px"></span>` : s.startsWith('sline:') ? `<svg width="16" height="8" style="vertical-align:middle"><line x1="2" y1="4" x2="15" y2="4" stroke="${s.slice(6)}" stroke-width="2" stroke-dasharray="0.5 5" stroke-linecap="round"/></svg>` : s.startsWith('pline:') ? `<svg width="16" height="8" style="vertical-align:middle"><line x1="2" y1="4" x2="15" y2="4" stroke="${s.slice(6)}" stroke-width="2.24" stroke-dasharray="0.35 1.8 0.35 5" stroke-linecap="round"/></svg>` : s.startsWith('oline:') ? `<svg width="16" height="8" style="vertical-align:middle"><line x1="2" y1="4" x2="15" y2="4" stroke="${s.slice(6)}" stroke-width="2.24" stroke-dasharray="0.35 7.15" stroke-linecap="round"/></svg>` : s.startsWith('line:') ? `<span class="ln" style="border-color:${s.slice(5)}"></span>` : s.startsWith('tup:') || s.startsWith('tdn:') ? `<svg width="16" height="15" style="vertical-align:middle">${[0, 6, 12].map(y => s.startsWith('tup:') ? `<path d="M5.5 ${y + 3}L8 ${y}L10.5 ${y + 3}Z" fill="${s.slice(4)}"/>` : `<path d="M5.5 ${y}L8 ${y + 3}L10.5 ${y}Z" fill="${s.slice(4)}"/>`).join('')}</svg>` : s.startsWith('gbox:') ? `<span class="sw" style="background:${s.slice(5)}26;outline:1.5px solid ${s.slice(5)};outline-offset:-1.5px"></span>` : s.startsWith('chline:') ? `<svg width="16" height="8" style="vertical-align:middle"><line x1="1" y1="4" x2="15" y2="4" stroke="${s.slice(7)}" stroke-width="1.6" stroke-dasharray="6 2" opacity="0.5"/></svg>` : s.startsWith('dline:') ? `<span class="ln d" style="border-color:${s.slice(6)}"></span>` : `<span class="sw" style="background:${s}"></span>`;
 // layer list: group headings switch a whole group; Clear selection turns every layer off
 const ALWAYS = new Set();
-let volOp = Math.min(0.3, Math.max(0.05, LS('ls.volOp') ?? 0.07));
+let volOp = Math.min(0.3, Math.max(0.02, LS('ls.volOp2') ?? 0.05));   // 2-30 %, default 5 % (new key: drops values saved under the old scale)
 {
   const grps = [...new Set(P.volumes.map(v => grpOf(v.cat)))].sort();
   const row = (k, l, on, s) => {
     const chk = ALWAYS.has(k) || (savedLay[k] ?? !!on), dis = ALWAYS.has(k) ? 'disabled title="Always shown"' : '';
     if (s === 'tree') return `<div class="tnode"><div class="trow"><span class="caret">▶</span><label class="chk"><input type="checkbox" data-layer="${k}" ${chk ? 'checked' : ''}>${l}</label></div><div class="tkids" hidden>${grps.map(g => `<label class="chk"><input type="checkbox" data-grp="${g}" checked><span class="sw" style="background:${GRPCOL[g] || '#999'}"></span>${g === '-' ? 'Other / accessory' : 'Group ' + g} <small style="color:var(--mute)">${P.volumes.filter(v => grpOf(v.cat) === g).length}</small></label>`).join('')}</div></div>`
-      + `<div class="row" style="margin-left:34px"><label>Opacity</label><input type="range" id="volOp" min="0.05" max="0.3" step="0.01" value="${volOp}" style="width:100px"></div>`;
+      + `<div class="row" style="margin-left:34px"><label>Opacity</label><input type="range" id="volOp" min="0.02" max="0.3" step="0.01" value="${volOp}" style="width:100px"><small id="volOpV" style="width:32px;text-align:right;color:var(--mute)">${Math.round(volOp * 100)}%</small></div>`;
     return `<label class="chk"><input type="checkbox" data-layer="${k}" ${chk ? 'checked' : ''} ${dis}>${LEG[k] ? LEG[k][1] : sw(s)}${l}</label>`;
   };
   $('#layers').innerHTML = `<button class="btn" id="bLayClear" style="width:100%;margin-bottom:8px">Clear selection</button>`
@@ -124,7 +123,7 @@ let volOp = Math.min(0.3, Math.max(0.05, LS('ls.volOp') ?? 0.07));
 const syncGroups = () => window.syncLayerGroups();
 const setLayers = on => { for (const [, ls] of LAYERS) for (const [k, , d] of ls) { const c = $(`[data-layer="${k}"]`); if (c && !c.disabled) c.checked = on === 'defaults' ? !!d : !!on; } $$('[data-grp]').forEach(c => c.checked = true); syncGroups(); applyVis(); };
 $('#bLayClear').onclick = () => setLayers(false);
-document.addEventListener('input', e => { if (e.target.id === 'volOp') { volOp = +e.target.value; SS('ls.volOp', volOp); for (const id in volObj) { const m = volObj[id].mesh; if (m !== hiObj) m.material.opacity = volOp; else m.userData.op0 = volOp; } } });
+document.addEventListener('input', e => { if (e.target.id === 'volOp') { volOp = +e.target.value; SS('ls.volOp2', volOp); const t = document.getElementById('volOpV'); if (t) t.textContent = Math.round(volOp * 100) + '%'; for (const id in volObj) { const m = volObj[id].mesh; if (m !== hiObj) m.material.opacity = volOp; else m.userData.op0 = volOp; } } });
 document.addEventListener('click', e => { const c = e.target.closest('.caret'); if (!c || c.classList.contains('leaf')) return; const k = c.parentElement.nextElementSibling; k.hidden = !k.hidden; c.classList.toggle('open', !k.hidden); });
 // the layer list carries the swatches, so the view has no separate legend box
 $('#legend').style.display = 'none';
@@ -135,6 +134,10 @@ const statG = new THREE.Group(), dynG = new THREE.Group(); root.add(statG, dynG)
 const pickables = [], lineMats = [];
 function put(parent, layer, o, fl = null) { o.userData.layer = layer; o.userData.fl = fl; parent.add(o); return o; }
 function meshFrom(v, t) { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3)); g.setIndex(t); g.computeVertexNormals(); return g; }
+// fire barrier in plan: red double line, the two faces of a 200 mm wall; plan (single-floor) views only, the 3D views show the wall itself
+function fbPlan(p, q, z, fl) { const L0 = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1, nx = -(q[1] - p[1]) / L0 * 0.1, ny = (q[0] - p[0]) / L0 * 0.1;
+  for (const s of [1, -1]) put(dynG, 'mix', line([[p[0] + s * nx, p[1] + s * ny, z], [q[0] + s * nx, q[1] + s * ny, z]], COLR.fb, 1.5), fl).userData.planOnly = true; }
+const edgeGapB = (a, b) => Math.hypot(Math.max(0, a[0] - b[3], b[0] - a[3]), Math.max(0, a[1] - b[4], b[1] - a[4]));
 function boxObj(b, color, op, clip = true, edgeOp = 0.9) {
   const g = new THREE.BoxGeometry(Math.max(b[3] - b[0], 0.05), Math.max(b[4] - b[1], 0.05), Math.max(b[5] - b[2], 0.05));
   const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: op, depthWrite: false, side: THREE.DoubleSide, clippingPlanes: clip ? CLIP : null }));
@@ -229,7 +232,7 @@ const volObj = {};
 for (const vm of P.volMeshes || []) {
   const vol = P.volumes.find(v => v.id === vm.id); if (!vol) continue;
   const g = meshFrom(vm.v, vm.t), col = GRPCOL[grpOf(vol.cat)] || '#999';
-  const me = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: volOp, depthWrite: false, side: THREE.DoubleSide }));
+  const me = new THREE.Mesh(g, dotMaterial(col, volOp));   // dot fill, front faces only
   me.add(new THREE.LineSegments(new THREE.EdgesGeometry(g, 25), new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.7 })));
   me.userData.pick = { type: 'zone', id: vol.id }; me.userData.grp = grpOf(vol.cat);
   put(statG, 'occ', me, vol.floor); pickables.push(me); volObj[vol.id] = { mesh: me, g };
@@ -237,8 +240,9 @@ for (const vm of P.volMeshes || []) {
 for (const m of P.shell || []) { const g = meshFrom(m.v, m.t); put(statG, 'shell', new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0xbfc3c8, transparent: true, opacity: 0.06, depthWrite: false, side: THREE.DoubleSide }))); put(statG, 'shell', new THREE.LineSegments(new THREE.EdgesGeometry(g, 25), new THREE.LineBasicMaterial({ color: 0x9a9fa6, transparent: true, opacity: 0.5 }))); }
 for (const m of P.context || []) if (m.layer === 'technical_room_availability_basement') {
   const g = meshFrom(m.v, m.t);
-  put(statG, 'tech', new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: COLR.tech, transparent: true, opacity: 0.2, depthWrite: false, side: THREE.DoubleSide })), -1);
-  put(statG, 'tech', new THREE.LineSegments(new THREE.EdgesGeometry(g, 25), new THREE.LineBasicMaterial({ color: COLR.tech })), -1);
+  // hidden-line look: front faces write depth first, then edges test against them, so a room's outline does not show through the rooms in front of it
+  const fm = put(statG, 'tech', new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: COLR.tech, transparent: true, opacity: 0.2, depthWrite: true, side: THREE.FrontSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 })), -1); fm.renderOrder = 1;
+  const em = put(statG, 'tech', new THREE.LineSegments(new THREE.EdgesGeometry(g, 25), new THREE.LineBasicMaterial({ color: COLR.tech, transparent: true })), -1); em.renderOrder = 2;
 }
 
 // core model: walls + stair flights for display, elevator / lobby clusters for the checks
@@ -342,7 +346,7 @@ function buildLS() {
       for (let q = 0; q < n; q++) { im.setMatrixAt(q, M.makeTranslation(r.heat[q * 3], r.heat[q * 3 + 1], r.z + 0.03)); im.setColorAt(q, ramp(r.heat[q * 3 + 2] / A.travelA1)); }
       im.renderOrder = 1; put(dynG, 'heat', im, r.idx);
     }
-    const wl = G.walls?.[r.idx];
+    const wl = (G.coreWalls || G.walls)?.[r.idx];   // drawn: core walls only, no restroom layout (routing still uses all walls)
     if (wl?.length) { const v = new Float32Array(wl.length / 2 * 3); for (let n = 0, m = 0; n < wl.length; n += 2, m += 3) { v[m] = wl[n]; v[m + 1] = wl[n + 1]; v[m + 2] = r.z + 0.06; }
       const gw = new THREE.BufferGeometry(); gw.setAttribute('position', new THREE.BufferAttribute(v, 3));
       put(dynG, 'walls', new THREE.LineSegments(gw, new THREE.LineBasicMaterial({ color: 0x343a40 })), r.idx); }
@@ -352,10 +356,14 @@ function buildLS() {
       for (let n = 0; n < r.unreachCells.length; n++) im.setMatrixAt(n, M.makeTranslation(v[n * 3], v[n * 3 + 1], v[n * 3 + 2]));
       put(dynG, 'unreach', im, r.idx);
       if (r.unreachM2 > 2 && !r.roof) { const c = r.unreachCells[Math.floor(r.unreachCells.length / 2)]; put(dynG, 'unreach', at(tag(`${fmt(r.unreachM2)} m² no path to a stair`, STC.fail, 0.85), c[0], c[1], r.z + 1), r.idx); } }
-    if (r.groups.length > 1) {
-      const v = [], t = []; for (const tr of L[r.idx].tris) { const b = v.length / 3; v.push(tr[0], tr[1], r.z + 0.15, tr[2], tr[3], r.z + 0.15, tr[4], tr[5], r.z + 0.15); t.push(b, b + 1, b + 2); }
-      { const eg = new THREE.EdgesGeometry(meshFrom(v, t), 1), pa = eg.attributes.position.array; for (let q = 0; q < pa.length; q += 6) put(dynG, 'mix', line([[pa[q], pa[q + 1], pa[q + 2]], [pa[q + 3], pa[q + 4], pa[q + 5]]], STC.fail, 2.5, true, 2.6, 0.7), r.idx); }
-      put(dynG, 'mix', at(tag(`${r.groups.join(' / ')} · separation per Table 508.4`, STC.fail, 0.85), bmax.x + 2, bmin.y, r.z + 0.3), r.idx);
+    // fire barriers between separated occupancies: drawn where the barrier would run (interior edges of the enclosed group), with its rating
+    for (const x of r.sep || []) if (x.segs.length) {
+      const zz = r.z + 0.15, zt = L[r.idx + 1]?.z ?? r.z + 4, v = [], t = [];   // full storey height: floor to the slab above
+      for (const q of x.segs) { const b = v.length / 3; v.push(q[0], q[1], r.z, q[2], q[3], r.z, q[2], q[3], zt, q[0], q[1], zt); t.push(b, b + 1, b + 2, b, b + 2, b + 3);
+        fbPlan([q[0], q[1]], [q[2], q[3]], zz, r.idx); }
+      put(dynG, 'mix', new THREE.Mesh(meshFrom(v, t), new THREE.MeshBasicMaterial({ color: COLR.fb, transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide, clippingPlanes: CLIP })), r.idx);
+      const q = x.segs.reduce((a, b) => Math.hypot(b[2] - b[0], b[3] - b[1]) > Math.hypot(a[2] - a[0], a[3] - a[1]) ? b : a);
+      put(dynG, 'mix', along(tag(x.atrium ? `${x.hr}-hr fire barrier · atrium` : `${x.hr}-hr fire barrier · ${x.main} | ${x.grp}`, COLR.fb, 0.85), [[q[0], q[1]], [q[2], q[3]]], zz), r.idx);
     }
   }
   // elevators and lobbies
@@ -368,10 +376,21 @@ function buildLS() {
   if (fse.length) { const b = fse.map(e => e.b), c = [Math.min(...b.map(x => x[0])), Math.min(...b.map(x => x[1]))];
     for (const i of fse[0].floors) put(dynG, 'fse', at(tag('FSE', COLR.fse, 0.85), c[0], c[1] - 1.5, L[i].z + 1.8), i); }
   for (const l of R.lobbies) if (l.role === 'elevator lobby') { put(dynG, 'elobby', pk(boxObj(l.b, COLR.elobby, 0.22), { type: 'lobby', id: l.id })); plan('elobby', l.b, COLR.elobby, 0.35, flIn(l.b), { type: 'lobby', id: l.id }); }
-  // atrium / immersive
+  // fire barriers around rated enclosures: exit stairs and vestibules (2 hr, §1023.2, §909.20), hoistways (2 hr, §713.4; one wall around each bank), FSE lobby (1 hr, §3007.6.2)
+  { const encl = [];
+    for (const s of R.stairs) { encl.push({ b: s.b, txt: `2-hr exit stair ${s.id}`, fl: s.floors }); if (s.vest) encl.push({ b: s.vest.b, txt: null, fl: flIn(s.vest.b) }); }
+    const bank = []; for (const e of R.elevators) { const k = bank.find(x => edgeGapB(x, e.b) < 0.5); if (k) { for (let n = 0; n < 3; n++) { k[n] = Math.min(k[n], e.b[n]); k[n + 3] = Math.max(k[n + 3], e.b[n + 3]); } } else bank.push([...e.b]); }
+    bank.forEach(b => encl.push({ b, txt: '2-hr hoistway', fl: flIn(b) }));
+    for (const l of R.lobbies) if (l.role === 'elevator lobby' && R.elevators.some(e => e.fse && e.lobby === l.id)) encl.push({ b: l.b, txt: '1-hr FSE lobby', fl: flIn(l.b) });
+    for (const x of encl) { const b = x.b, c = [[b[0], b[1]], [b[3], b[1]], [b[3], b[4]], [b[0], b[4]]], v = [], t = [];
+      for (let k = 0; k < 4; k++) { const p = c[k], q = c[(k + 1) % 4], n = v.length / 3; v.push(p[0], p[1], b[2], q[0], q[1], b[2], q[0], q[1], b[5], p[0], p[1], b[5]); t.push(n, n + 1, n + 2, n, n + 2, n + 3); }
+      put(dynG, 'mix', new THREE.Mesh(meshFrom(v, t), new THREE.MeshBasicMaterial({ color: COLR.fb, transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide, clippingPlanes: CLIP })));
+      for (const i of x.fl) for (let k = 0; k < 4; k++) fbPlan(c[k], c[(k + 1) % 4], L[i].z + 0.15, i);
+      if (x.txt) put(dynG, 'mix', at(tag(x.txt, COLR.fb, 0.85), b[0], b[1], b[5] + 0.3)); }
+  }
+  // immersive venues
   for (const v of P.volumes) {
-    const r = R.rows[v.floor], vo = volObj[v.id]; if (!vo) continue;
-    if (r && v.zmax > (L[v.floor + 1]?.z ?? Infinity) + 0.5) put(dynG, 'atrium', new THREE.LineSegments(new THREE.EdgesGeometry(vo.g, 25), new THREE.LineBasicMaterial({ color: COLR.atr })), v.floor);
+    const vo = volObj[v.id]; if (!vo) continue;
     if (v.cat === 'immersive') put(dynG, 'imm', new THREE.Mesh(vo.g, new THREE.MeshBasicMaterial({ color: COLR.imm, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide })), v.floor);
   }
   applyVis();
@@ -525,7 +544,7 @@ function kpis() {
     ['hr', 'High-rise', `${fmt(R.hf)} ft`, 'Top occupied floor above lowest level', item('hr')?.status || 'ok'],
     ['fse', 'Vertical transport', fse.length ? fse.map(e => e.id).join('/') : (detailState < 2 ? '…' : 'none'), 'Fire service access elevator', item('fse')?.status || 'info'],
     ['roof', 'Vertical transport', toRoof.length ? toRoof.map(s => s.id).join(', ') : 'none', 'Stairway to roof', item('roof')?.status || 'ok'],
-    ['haz', 'High-rise', `${R.rows.filter(r => r.multi.length).length} storeys`, 'Atrium · special amusement · mixed occupancy', 'info'],
+    ['haz', 'High-rise', `${R.rows.filter(r => r.multi.length).length} storeys`, 'Two-storey openings · special amusement · mixed occupancy', 'info'],
   ];
 }
 function kpiInfo(k) {
@@ -561,7 +580,7 @@ function kpiInfo(k) {
       item('fse')?.detail],
     roof: ['Stairway to roof', 'NYC BC §1011.12; Appendix Q (NFPA 14 §7.3.2.1 roof manifold)',
       ln(R.stairs.map(s => `${s.id}: +${s.bot.toFixed(1)} → +${s.top.toFixed(1)} m ${s.toRoof ? '✓ reaches the roof' : `✕ roof at +${L[roofIdx].z.toFixed(1)}`}`)), item('roof')?.detail],
-    haz: ['Atrium, special amusement, mixed occupancy', 'NYC BC §404, §411.1, §508.4',
+    haz: ['Two-storey openings, special amusement, mixed occupancy', 'NYC BC §712.1.9, §404, §411.1, §508.4',
       ln(['atr', 'imm', 'mix'].map(item).filter(Boolean).map(i => `${i.item}: ${i.detail}`)), ''],
   }[k];
   if (!I) return '';

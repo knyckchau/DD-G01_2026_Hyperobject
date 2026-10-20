@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { generate, DEFAULTS, CATS, MISSING, IN, M2FT2 } from './engine.js?v=20261019g'; // keep in step with APP_V in index.html
-import { viewTools, renderTiled } from './viewtools.js?v=20261019g';
-import { collect, toOBJ, addTo3dm, rhinoLib } from './export3d.js?v=20261019g';
+import { generate, DEFAULTS, CATS, MISSING, IN, M2FT2 } from './engine.js?v=20261019v'; // keep in step with APP_V in index.html
+import { viewTools, renderTiled, dotMaterial, DOTFILL } from './viewtools.js?v=20261019v';
+import { collect, toOBJ, addTo3dm, rhinoLib } from './export3d.js?v=20261019v';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -54,7 +54,7 @@ const LEGEND = [['Supply air', 'Supply'], ['Return air', 'Return'], ['Outdoor ai
 const view = $('#view');
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
 renderer.localClippingEnabled = true;
-renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+renderer.setPixelRatio(Math.min(2, devicePixelRatio)); DOTFILL.px.value = renderer.getPixelRatio();
 view.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 const BG = { light: new THREE.Color('#f7f7f4'), dark: new THREE.Color('#15171a') };
@@ -126,11 +126,11 @@ P.levels.forEach((l, i) => {
   const v = [], t = []; for (const tr of l.tris) { const b = v.length / 3; v.push(tr[0], tr[1], l.z, tr[2], tr[3], l.z, tr[4], tr[5], l.z); t.push(b, b + 1, b + 2); }
   const g = meshFrom(v, t); ctx[i].slab.add(new THREE.Mesh(g, slabMat)); ctx[i].slab.add(new THREE.LineSegments(new THREE.EdgesGeometry(g, 1), slabEdge));
 });
-const volObjs = []; let volOp = 0.07;
+const volObjs = []; let volOp = 0.05;   // 2-30 %
 for (const vm of P.volMeshes) {
   const vol = P.volumes.find(v => v.id === vm.id); if (!vol) continue;
   const g = meshFrom(vm.v, vm.t);
-  const mat = new THREE.MeshBasicMaterial({ color: C[vol.cat].color, transparent: true, opacity: volOp, depthWrite: false, side: THREE.DoubleSide });
+  const mat = dotMaterial(C[vol.cat].color, volOp);   // dot fill, front faces only
   const me = new THREE.Mesh(g, mat); me.userData.vol = vol;
   const ed = new THREE.LineSegments(new THREE.EdgesGeometry(g, 25), new THREE.LineBasicMaterial({ color: C[vol.cat].color, transparent: true, opacity: 0.7 }));
   me.add(ed); ctx[vol.floor].prog.add(me); volObjs.push(me);
@@ -144,8 +144,8 @@ document.addEventListener('click', e => { const c = e.target.closest('.caret'); 
 { const cats = [...new Set(P.volumes.map(v => v.cat))];
   $('#treeProgram').innerHTML = treeHTML({ label: 'Program volumes', attr: 'data-layer="program"', checked: false,
     kids: cats.map(c => ({ label: C[c].label, attr: `data-vcat="${c}"`, checked: true, color: C[c].color, count: P.volumes.filter(v => v.cat === c).length })) })
-    + '<div class="row" style="margin-left:34px"><label>Opacity</label><input type="range" id="volOp" min="0.05" max="0.3" step="0.01" value="0.07" style="width:100px"></div>'; }
-document.addEventListener('input', e => { if (e.target.id === 'volOp') { volOp = +e.target.value; volObjs.forEach(o => { if (o !== selVol) o.material.opacity = volOp; }); } });
+    + '<div class="row" style="margin-left:34px"><label>Opacity</label><input type="range" id="volOp" min="0.02" max="0.3" step="0.01" value="0.05" style="width:100px"><small id="volOpV" style="width:32px;text-align:right;color:var(--mute)">5%</small></div>'; }
+document.addEventListener('input', e => { if (e.target.id === 'volOp') { volOp = +e.target.value; const t = document.getElementById('volOpV'); if (t) t.textContent = Math.round(volOp * 100) + '%'; volObjs.forEach(o => { if (o !== selVol) o.material.opacity = volOp; }); } });
 // layer list: big groups with caret + heading checkbox, rows aligned as caret | checkbox | legend | name
 {
   const sec = $('#treeProgram').closest('.sec'), L = s => sec.querySelector(s)?.closest('label') || null;

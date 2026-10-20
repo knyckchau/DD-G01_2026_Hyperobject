@@ -2,9 +2,9 @@
 // the energy checks will be added here as the page is defined.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { CATS } from './engine.js?v=20261019g'; // keep in step with APP_V in st.html
-import { viewTools, renderTiled } from './viewtools.js?v=20261019g';
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261019g';
+import { CATS } from './engine.js?v=20261019v'; // keep in step with APP_V in st.html
+import { viewTools, renderTiled } from './viewtools.js?v=20261019v';
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261019v';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);

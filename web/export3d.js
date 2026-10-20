@@ -61,7 +61,7 @@ export function collect(roots, { layerOf, zRange = null, fallback = null, skip =
       for (let i = 0; i < loc.length; i++) V.push(loc[i]); for (let i = 0; i < keep.length; i++) F.push(base + keep[i]);
       if (VC) for (let i = 0; i < pos.count; i++) VC.push(C.r, C.g, C.b);
     }
-    if (F.length) out.push({ kind: 'mesh', layer, col, op, v: V, f: F, vc: VC });
+    if (F.length) out.push({ kind: 'mesh', layer, col, op, v: V, f: F, vc: VC, dots: !!mat?.userData?.dots });   // dots: stipple fill (SVG pattern)
   }));
   return out;
 }
