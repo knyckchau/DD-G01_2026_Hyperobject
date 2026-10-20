@@ -2,9 +2,9 @@
 // from models/*structure*.fbx) against the current slabs and programme, layer by layer.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { CATS } from './engine.js?v=20261019a'; // keep in step with APP_V in st.html
-import { viewTools, renderTiled } from './viewtools.js?v=20261019a';
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261019a';
+import { CATS } from './engine.js?v=20261019c'; // keep in step with APP_V in st.html
+import { viewTools, renderTiled } from './viewtools.js?v=20261019c';
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261019c';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);

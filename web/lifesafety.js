@@ -229,26 +229,31 @@ export function lifeSafety(P, A, model, G = {}) {
   const it = (status, item, detail, ref, k) => items.push({ status, item, detail, ref, k });
 
   // ---------- stairs, vestibules, exits ----------
-  const lob = (G.lobbies || []).map((b, i) => ({ id: 'LB' + (i + 1), b }));
-  const stairs = (MEP.stairs || []).map(s => ({ id: s.id, b: s.bbox, bot: s.bbox[2], top: s.bbox[5] }));
+  // an enclosure (stair shaft, vestibule, lobby) is a room: it rises to the slab above the highest floor it serves, not to the top of the flight or floor patch inside it
+  const ceil = i => L[i + 1]?.z ?? L[i].z + (L[i].z - L[i - 1].z);
+  const topFloor = z => L.reduce((m, l, i) => l.z <= z + 0.1 ? i : m, 0);
+  const lob = (G.lobbies || []).map((b, i) => ({ id: 'LB' + (i + 1), b: [...b.slice(0, 5), ceil(topFloor(b[5]))] }));
+  const stairs = (MEP.stairs || []).map(s => ({ id: s.id, b: [...s.bbox], bot: s.bbox[2], top: s.bbox[5] }));
   for (const s of stairs) {
     const v = lob.filter(l => edgeGap(l.b, s.b) < 0.4 && zOverlap(l.b, s.b)).sort((a, c) => (a.b[3] - a.b[0]) * (a.b[4] - a.b[1]) - (c.b[3] - c.b[0]) * (c.b[4] - c.b[1]))[0];
     s.vest = v && (v.b[3] - v.b[0]) * (v.b[4] - v.b[1]) < 12 ? v : null;   // small lobby attached to the stair = vestibule
     if (s.vest) s.vest.role = 'vestibule';
     s.toRoof = s.top >= roofZ - 0.3; s.toBase = P.basementZ != null && s.bot <= P.basementZ + 1;
     s.floors = L.map((l, i) => i).filter(i => s.bot <= L[i].z + 1 && s.top >= L[i].z + 1);
+    if (s.floors.length) s.b[5] = Math.max(s.b[5], ceil(Math.max(...s.floors)));
   }
   // stairs sharing a wall count as one exit stairway (§1007.1.1)
   const exitOf = {}; stairs.forEach((s, i) => { exitOf[s.id] = s.id; for (let j = 0; j < i; j++) if (edgeGap(s.b, stairs[j].b) < 0.3) exitOf[s.id] = exitOf[stairs[j].id]; });
 
   // ---------- elevators and lobbies ----------
-  const elev = (G.elevators || []).map(e => ({ ...e, bot: e.b[2], top: e.b[5] }));
+  const elev = (G.elevators || []).map(e => ({ ...e, b: [...e.b], bot: e.b[2], top: e.b[5] }));
   for (const e of elev) {
     const l = lob.filter(x => x.role !== 'vestibule' && edgeGap(x.b, e.b) < 0.4 && zOverlap(x.b, e.b))[0];
     e.lobby = l ? l.id : null; if (l) l.role = 'elevator lobby';
     e.lobbyStair = l ? (stairs.filter(s => edgeGap(s.b, l.b) < 0.6).map(s => s.id)[0] || null) : null;
     e.reachesTop = e.top >= hiZ;
     e.floors = L.map((x, i) => i).filter(i => e.bot <= L[i].z + 0.5 && e.top >= L[i].z + 0.5);
+    if (e.floors.length) e.b[5] = Math.max(e.b[5], ceil(Math.max(...e.floors)));   // hoistway rises to the slab above the top stop
     e.fse = !!(e.lobby && e.reachesTop);
   }
   lob.forEach(l => l.role ||= 'lobby');
@@ -384,7 +389,7 @@ export function lifeSafety(P, A, model, G = {}) {
   it('info', 'Exit stairways', `${stairs.length} stairs in the model${nEx < stairs.length ? `, but stairs sharing a wall count as one exit: ${nEx} exits` : ''}. Capacity ${A.stairClearIn} in ÷ ${A.stairFactor} in/occ = ${Math.floor(capPer)} occupants per stair per storey. Enclosures 2-hour (four or more storeys).`, 'NYC BC §1005.3.1, §1007.1.1, §1023.2', 'cap');
   if (hf > 75) {
     const need = stairs.filter(s => s.floors.some(i => i < nOcc && (L[i].z - z0) * FT > 75));
-    const noV = need.filter(s => !s.vest || s.vest.b[5] < Math.max(...s.floors.filter(i => i < nOcc).map(i => L[i].z)) - 0.1);
+    const noV = need.filter(s => !s.vest || s.vest.b[5] < Math.max(...s.floors.filter(i => i < nOcc).map(i => L[i].z)) + 0.5);
     it(noV.length ? 'fail' : 'ok', 'Smokeproof enclosures', noV.length ? `Stairs without a vestibule over their full height: ${noV.map(s => s.id).join(', ')}.` : `Every stair serving floors above 75 ft has an attached vestibule in the model (${need.map(s => `${s.id}→${s.vest.id}`).join(', ')}). Ventilation or pressurisation per §909.20 still to be designed.`, 'NYC BC §403.5.4, §909.20, §1023.11', 'smoke');
   }
   if (hf > 120) {
