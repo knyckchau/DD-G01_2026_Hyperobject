@@ -2,9 +2,9 @@
 // from models/*structure*.fbx) against the current slabs and programme, layer by layer.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { CATS } from './engine.js?v=20261019d'; // keep in step with APP_V in st.html
-import { viewTools, renderTiled } from './viewtools.js?v=20261019d';
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261019d';
+import { CATS } from './engine.js?v=20261019e'; // keep in step with APP_V in st.html
+import { viewTools, renderTiled } from './viewtools.js?v=20261019e';
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261019e';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -42,7 +42,7 @@ function textSprite(txt) {
   const c = document.createElement('canvas'), x = c.getContext('2d'), F = '600 30px IBM Plex Mono, monospace'; x.font = F; const w = Math.ceil(x.measureText(txt).width) + 22;
   c.width = w; c.height = 56; x.font = F; x.fillStyle = 'rgba(255,255,255,0.93)'; x.fillRect(0, 6, w, 44); x.fillStyle = '#868e96'; x.fillRect(0, 6, 6, 44); x.fillStyle = '#1d1f22'; x.fillText(txt, 12, 39);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true })); s.userData.text = txt; s.userData.px = 19; s.userData.asp = w / 56; s.center.set(1, 0); s.renderOrder = 10; return s;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true })); s.frustumCulled = false; s.userData.text = txt; s.userData.px = 19; s.userData.asp = w / 56; s.center.set(1, 0); s.renderOrder = 10; return s;   // labels are drawn off their anchor, so never frustum-cull them (else they are cut at tile seams and view edges)
 }
 
 // context: slabs, floor labels, programme

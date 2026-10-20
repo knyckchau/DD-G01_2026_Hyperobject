@@ -8,11 +8,11 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
-import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261019d'; // keep in step with APP_V in ls.html
-import { viewTools, renderTiled } from './viewtools.js?v=20261019d';
-import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261019d';
-import { LS_Q } from './ls-codes.js?v=20261019d';
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261019d';
+import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261019e'; // keep in step with APP_V in ls.html
+import { viewTools, renderTiled } from './viewtools.js?v=20261019e';
+import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261019e';
+import { LS_Q } from './ls-codes.js?v=20261019e';
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261019e';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -209,7 +209,7 @@ function tag(txt, color = '#868e96', size = 1) {
   x.font = F; const w = Math.ceil(x.measureText(txt).width) + 22; c.width = w; c.height = 56; x.font = F;
   x.fillStyle = 'rgba(255,255,255,0.93)'; x.fillRect(0, 6, w, 44); x.fillStyle = color; x.fillRect(0, 6, 6, 44); x.fillStyle = '#1d1f22'; x.fillText(txt, 12, 39);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true })); s.userData.text = txt; s.userData.px = Math.max(12, 15 * size); s.userData.asp = w / 56; s.scale.set(s.userData.asp, 1, 1); s.center.set(0, 0); s.renderOrder = 10; return s;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true })); s.frustumCulled = false; s.userData.text = txt; s.userData.px = Math.max(12, 15 * size); s.userData.asp = w / 56; s.scale.set(s.userData.asp, 1, 1); s.center.set(0, 0); s.renderOrder = 10; return s;   // labels are drawn off their anchor, so never frustum-cull them (else they are cut at tile seams and view edges)
 }
 const RAMP = [[0, '#d3f9d8'], [0.5, '#ffe066'], [0.8, '#f76707'], [1, '#c92a2a'], [1.6, '#862e9c']].map(([t, c]) => [t, new THREE.Color(c)]);
 const ramp = t => { for (let n = 1; n < RAMP.length; n++) if (t <= RAMP[n][0]) { const [a, ca] = RAMP[n - 1], [b, cb] = RAMP[n]; return ca.clone().lerp(cb, (t - a) / (b - a)); } return RAMP[RAMP.length - 1][1].clone(); };

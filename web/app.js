@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { generate, DEFAULTS, CATS, MISSING, IN, M2FT2 } from './engine.js?v=20261019d'; // keep in step with APP_V in index.html
-import { viewTools, renderTiled } from './viewtools.js?v=20261019d';
-import { collect, toOBJ, addTo3dm, rhinoLib } from './export3d.js?v=20261019d';
+import { generate, DEFAULTS, CATS, MISSING, IN, M2FT2 } from './engine.js?v=20261019e'; // keep in step with APP_V in index.html
+import { viewTools, renderTiled } from './viewtools.js?v=20261019e';
+import { collect, toOBJ, addTo3dm, rhinoLib } from './export3d.js?v=20261019e';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -160,7 +160,7 @@ function textSprite(txt) {   // floor label: boxed tag, same as the Structure, L
   const c = document.createElement('canvas'), x = c.getContext('2d'), F = '600 30px IBM Plex Mono, monospace'; x.font = F; const w = Math.ceil(x.measureText(txt).width) + 22;
   c.width = w; c.height = 56; x.font = F; x.fillStyle = 'rgba(255,255,255,0.93)'; x.fillRect(0, 6, w, 44); x.fillStyle = '#868e96'; x.fillRect(0, 6, 6, 44); x.fillStyle = '#1d1f22'; x.fillText(txt, 12, 39);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true })); s.userData.text = txt; s.userData.px = 19; s.userData.asp = w / 56; s.center.set(1, 0); s.renderOrder = 10; return s;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true })); s.frustumCulled = false; s.userData.text = txt; s.userData.px = 19; s.userData.asp = w / 56; s.center.set(1, 0); s.renderOrder = 10; return s;   // labels are drawn off their anchor, so never frustum-cull them (else they are cut at tile seams and view edges)
 }
 // floor labels keep a constant on-screen size whatever the zoom
 const _sv = new THREE.Vector3();
@@ -188,7 +188,7 @@ function tagSprite(txt, color) {
   x.font = '600 30px IBM Plex Mono, monospace'; const w = Math.min(250, x.measureText(txt).width + 18);
   x.fillStyle = 'rgba(255,255,255,0.92)'; x.fillRect(0, 6, w, 44); x.fillStyle = color; x.fillRect(0, 6, 6, 44);
   x.fillStyle = '#1d1f22'; x.fillText(txt, 12, 39);
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false, transparent: true }));
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false, transparent: true })); s.frustumCulled = false;   // labels are drawn off their anchor, so never frustum-cull them (else they are cut at tile seams and view edges)
   s.scale.set(4.4, 0.96, 1); s.center.set(0, 0); s.renderOrder = 10; s.userData.tag = true; return s;
 }
 const TAGGED = /pump|heater|switchboard|transformer|generator|chiller|heat pump|DOAS|Central AHU|Air handling|Water meter|AV rack/i;
