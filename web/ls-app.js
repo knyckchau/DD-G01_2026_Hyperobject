@@ -8,11 +8,11 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
-import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261019e'; // keep in step with APP_V in ls.html
-import { viewTools, renderTiled } from './viewtools.js?v=20261019e';
-import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261019e';
-import { LS_Q } from './ls-codes.js?v=20261019e';
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261019e';
+import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261019f'; // keep in step with APP_V in ls.html
+import { viewTools, renderTiled } from './viewtools.js?v=20261019f';
+import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261019f';
+import { LS_Q } from './ls-codes.js?v=20261019f';
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261019f';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -62,7 +62,7 @@ const LAYERS = [
   ['Base', [['slabs', 'Slabs', 1], ['labels', 'Floor labels + egress status', 1], ['occ', 'Programme by occupancy group', 1, 'tree'], ['occTags', 'Occupant load tags', 1], ['core', 'Core walls (core model)', 1], ['walls', 'Walls cut at +1.0 m (routing)', 1, '#343a40']]],
   ['Vertical exits', [['stairs', 'Exit stair enclosures', 1, COLR.stair], ['stairGeo', 'Stair flights (core model)', 0], ['stairTags', 'Stair ID tags', 1], ['vest', 'Smokeproof vestibules', 1, COLR.vest], ['roof', 'Stairway to roof', 1, 'tup:' + STC.fail], ['base', 'Basement exits', 1, 'tdn:' + STC.fail], ['cutdoor', 'Stair doors opening onto no floor', 1, STC.fail]]],
   ['Horizontal egress', [['heat', 'Walking distance to nearest exit (map)', 0, 'grad'], ['paths', 'Path of travel (most remote point of each space → nearest exit)', 1, 'oline:' + STC.ok], ['cpet', 'Common path of egress travel', 1, 'cline:' + STC.ok], ['travel2', 'Second exit path (Group A)', 0, 'pline:' + STC.ok], ['sep', 'Exit separation vs ⅓ diagonal', 0, 'chline:#868e96'], ['unreach', 'Floor with no path to a stair', 1, STC.fail]]],
-  ['Elevators', [['elev', 'Elevator cars', 1, COLR.elev], ['fse', 'Fire service access elevator (candidates)', 1, COLR.fse], ['elobby', 'Elevator lobby', 1, COLR.elobby]]],
+  ['Elevators', [['elev', 'Elevator cars', 1, COLR.elev], ['fse', 'Fire service access elevator', 1, COLR.fse], ['elobby', 'Elevator lobby', 1, COLR.elobby]]],
   ['Hazards & separation', [['atrium', 'Multi-storey volumes (atrium)', 1, COLR.atr], ['imm', 'Immersive halls (§411)', 0, COLR.imm], ['mix', 'Mixed-occupancy floors (§508.4)', 0, 'dline:' + STC.fail]]],
   ['Context', [['shell', 'Basement / site context', 0], ['tech', 'Basement technical rooms', 1, COLR.tech]]],
 ];
@@ -94,7 +94,7 @@ const LEG = {
   sep: [2, '<svg width="22" height="12" style="vertical-align:middle;flex:none" opacity="0.5"><line x1="2" y1="3" x2="20" y2="3" stroke="#868e96" stroke-width="1.3" stroke-dasharray="7 2"/><line x1="2" y1="0.5" x2="2" y2="5.5" stroke="#868e96" stroke-width="1.4"/><line x1="20" y1="0.5" x2="20" y2="5.5" stroke="#868e96" stroke-width="1.4"/><line x1="2" y1="9" x2="20" y2="9" stroke="' + STC.ok + '" stroke-width="2" stroke-dasharray="7 2"/><line x1="2" y1="6.5" x2="2" y2="11.5" stroke="' + STC.ok + '" stroke-width="1.8"/><line x1="20" y1="6.5" x2="20" y2="11.5" stroke="' + STC.ok + '" stroke-width="1.8"/></svg>', 'Max diagonal × ⅓ · exit separation (door to door)'],
   unreach: [1, BOX(STC.fail, 0.45), 'Floor with no route to a stair'],
   elev: [1, BOX(COLR.elev, 0.5, COLR.elev), 'Elevator car'],
-  fse: [1, OUT(COLR.fse), 'FSE candidate'],
+  fse: [1, OUT(COLR.fse), 'Fire service access elevator'],
   elobby: [1, BOX(COLR.elobby, 0.45, COLR.elobby), 'Elevator lobby'],
   atrium: [1, OUT(COLR.atr), 'Multi-storey volume (atrium)'],
   imm: [1, BOX(COLR.imm, 0.35), 'Immersive hall (§411)'],
@@ -363,12 +363,10 @@ function buildLS() {
     put(dynG, 'elev', pk(boxObj(e.b, COLR.elev, 0.28), { type: 'elev', id: e.id }));
     plan(e.fse ? 'fse' : 'elev', e.b, e.fse ? COLR.fse : COLR.elev, 0.35, e.floors, { type: 'elev', id: e.id }, true);   // shaft is continuous; floor footprints only in single-floor views
     if (e.fse) put(dynG, 'fse', boxObj([e.b[0] - 0.08, e.b[1] - 0.08, e.b[2], e.b[3] + 0.08, e.b[4] + 0.08, e.b[5]], COLR.fse, 0.05, true, 1));
-    const c = bctr(e.b);
-    put(dynG, 'elev', at(tag(`${e.id} ${e.kind[0].toUpperCase()}`, COLR.elev, 0.75), c[0], c[1], e.top + 0.5));
   }
   const fse = R.elevators.filter(e => e.fse);
   if (fse.length) { const b = fse.map(e => e.b), c = [Math.min(...b.map(x => x[0])), Math.min(...b.map(x => x[1]))];
-    for (const i of fse[0].floors) put(dynG, 'fse', at(tag(`FSE candidate ${fse.map(e => e.id).join('/')}`, COLR.fse, 0.85), c[0], c[1] - 1.5, L[i].z + 1.8), i); }
+    for (const i of fse[0].floors) put(dynG, 'fse', at(tag('FSE', COLR.fse, 0.85), c[0], c[1] - 1.5, L[i].z + 1.8), i); }
   for (const l of R.lobbies) if (l.role === 'elevator lobby') { put(dynG, 'elobby', pk(boxObj(l.b, COLR.elobby, 0.22), { type: 'lobby', id: l.id })); plan('elobby', l.b, COLR.elobby, 0.35, flIn(l.b), { type: 'lobby', id: l.id }); }
   // atrium / immersive
   for (const v of P.volumes) {
@@ -525,7 +523,7 @@ function kpis() {
     ['cpet', 'Egress', `${zs.filter(z => z.cpStatus === 'ok').length} / ${zs.length}`, 'Spaces within the common path limit', worstSt(zs.map(z => z.cpStatus))],
     ['reach', 'Egress', `${cutN}`, `Stair doors opening onto no floor${ur ? ` · ${fmt(ur)} m² with no route` : ''}`, cutN || ur ? 'fail' : 'ok'],
     ['hr', 'High-rise', `${fmt(R.hf)} ft`, 'Top occupied floor above lowest level', item('hr')?.status || 'ok'],
-    ['fse', 'Vertical transport', fse.length ? fse.map(e => e.id).join('/') : (detailState < 2 ? '…' : 'none'), 'Fire service access elevator (candidates)', item('fse')?.status || 'info'],
+    ['fse', 'Vertical transport', fse.length ? fse.map(e => e.id).join('/') : (detailState < 2 ? '…' : 'none'), 'Fire service access elevator', item('fse')?.status || 'info'],
     ['roof', 'Vertical transport', toRoof.length ? toRoof.map(s => s.id).join(', ') : 'none', 'Stairway to roof', item('roof')?.status || 'ok'],
     ['haz', 'High-rise', `${R.rows.filter(r => r.multi.length).length} storeys`, 'Atrium · special amusement · mixed occupancy', 'info'],
   ];
@@ -559,7 +557,7 @@ function kpiInfo(k) {
       `H = (${L[roofIdx - 1].z.toFixed(2)} − ${L[0].z.toFixed(2)}) m × 3.281 = ${fmt(R.hf)} ft\n> 75 ft: smokeproof enclosures, fire command center, standby and emergency power, voice alarm\n> 120 ft: fire service access elevator`,
       'Lowest level of fire department vehicle access taken as the grade floor slab.'],
     fse: ['Fire service access elevator', 'NYC BC §403.6.1, §3007.1',
-      R.elevators.length ? ln(R.elevators.map(e => `${e.id} ${e.kind}: +${e.bot.toFixed(1)} → +${e.top.toFixed(1)} m · ${e.floors.length} floors · lobby ${e.lobby || 'none'}${e.lobbyStair ? ' (adjoins ' + e.lobbyStair + ')' : ''}${e.fse ? ' → candidate' : ''}`)) + `\nfloors not reached by any car: ${L.map((l, i) => i).filter(i => !R.elevators.some(e => e.floors.includes(i))).map(flName).join(', ') || 'none'}` : 'Elevators are read from the core model (detail-data.js), which is not loaded.',
+      R.elevators.length ? ln(R.elevators.map(e => `${e.id} ${e.kind}: +${e.bot.toFixed(1)} → +${e.top.toFixed(1)} m · ${e.floors.length} floors · lobby ${e.lobby || 'none'}${e.lobbyStair ? ' (adjoins ' + e.lobbyStair + ')' : ''}${e.fse ? ' → FSE' : ''}`)) + `\nfloors not reached by any car: ${L.map((l, i) => i).filter(i => !R.elevators.some(e => e.floors.includes(i))).map(flName).join(', ') || 'none'}` : 'Elevators are read from the core model (detail-data.js), which is not loaded.',
       item('fse')?.detail],
     roof: ['Stairway to roof', 'NYC BC §1011.12; Appendix Q (NFPA 14 §7.3.2.1 roof manifold)',
       ln(R.stairs.map(s => `${s.id}: +${s.bot.toFixed(1)} → +${s.top.toFixed(1)} m ${s.toRoof ? '✓ reaches the roof' : `✕ roof at +${L[roofIdx].z.toFixed(1)}`}`)), item('roof')?.detail],
@@ -603,10 +601,10 @@ function renderPane() {
     <div class="note">Stairs come from the 01_STAIRS layer inside the CORES volumes (tools/build_data.py); vestibules are small 04_LOBBY_AREAS pieces touching a stair. Capacity = ${A.stairClearIn} in ÷ ${A.stairFactor} in/occ per storey. Enclosures 2-hour (§1023.2).</div>`;
     pane.querySelectorAll('tr[data-s]').forEach(r => r.onclick = () => select({ type: 'stair', id: r.dataset.s }));
   } else if (tab === 'el') {
-    pane.innerHTML = detailState < 2 ? '<p style="color:var(--mute)">Loading the core model…</p>' : `<table><tr><th>Car</th><th>Type</th><th>Bottom</th><th>Top</th><th>Floors</th><th>Lobby</th><th>FSE</th></tr>${R.elevators.map(e => `<tr data-e="${e.id}"><td>${e.id}</td><td>${e.kind}</td><td>${e.bot.toFixed(1)}</td><td>${e.top.toFixed(1)}</td><td>${e.floors.length}</td><td>${e.lobby || '–'}${e.lobbyStair ? ' ↔ ' + e.lobbyStair : ''}</td><td class="${e.fse ? 'ok' : ''}">${e.fse ? 'candidate' : '–'}</td></tr>`).join('')}</table>
+    pane.innerHTML = detailState < 2 ? '<p style="color:var(--mute)">Loading the core model…</p>' : `<table><tr><th>Car</th><th>Type</th><th>Bottom</th><th>Top</th><th>Floors</th><th>Lobby</th><th>FSE</th></tr>${R.elevators.map(e => `<tr data-e="${e.id}"><td>${e.id}</td><td>${e.kind}</td><td>${e.bot.toFixed(1)}</td><td>${e.top.toFixed(1)}</td><td>${e.floors.length}</td><td>${e.lobby || '–'}${e.lobbyStair ? ' ↔ ' + e.lobbyStair : ''}</td><td class="${e.fse ? 'ok' : ''}">${e.fse ? 'FSE' : '–'}</td></tr>`).join('')}</table>
     <h3 style="font-size:12px;margin:14px 0 6px">Lobbies and vestibules</h3>
     <table><tr><th>ID</th><th>Role</th><th>Plan (m)</th><th>Top</th></tr>${R.lobbies.map(l => `<tr data-l="${l.id}"><td>${l.id}</td><td>${l.role}</td><td>${(l.b[3] - l.b[0]).toFixed(2)} × ${(l.b[4] - l.b[1]).toFixed(2)}</td><td>${l.b[5].toFixed(1)}</td></tr>`).join('')}</table>
-    <div class="note">Cars and lobbies are read from the core model layers 02_PASSENGER_ELEVATORS, 03_FREIGHT_ELEVATOR and 04_LOBBY_AREAS. A car is an FSE candidate when it has an enclosed lobby and reaches the top occupied floor; the lobby should open directly to an exit stair. Designation, car size, standby power and water protection still to be confirmed (§3007).</div>`;
+    <div class="note">Cars and lobbies are read from the core model layers 02_PASSENGER_ELEVATORS, 03_FREIGHT_ELEVATOR and 04_LOBBY_AREAS. The FSE is the largest car that has an enclosed lobby and reaches the top occupied floor (NYC requires one); the lobby should open directly to an exit stair. Car size, standby power and water protection still to be confirmed (§3007).</div>`;
     pane.querySelectorAll('tr[data-e]').forEach(r => r.onclick = () => select({ type: 'elev', id: r.dataset.e }));
     pane.querySelectorAll('tr[data-l]').forEach(r => r.onclick = () => select({ type: 'lobby', id: r.dataset.l }));
   } else if (tab === 'aud') {
@@ -618,7 +616,7 @@ function renderPane() {
     if (p.type === 'stair') { const s = R.stairs.find(x => x.id === p.id); h = `Exit stair ${s.id}`;
       rows = [['Plan (m)', `${(s.b[3] - s.b[0]).toFixed(2)} × ${(s.b[4] - s.b[1]).toFixed(2)}`], ['Bottom / top', `+${s.bot.toFixed(2)} / +${s.top.toFixed(2)} m`], ['Floors served', s.floors.map(flName).join(', ')], ['Capacity per storey', `${fmt(R.capPer)} occupants (${A.stairClearIn} in clear)`], ['Vestibule', s.vest ? `${s.vest.id} (${(s.vest.b[3] - s.vest.b[0]).toFixed(2)} × ${(s.vest.b[4] - s.vest.b[1]).toFixed(2)} m)` : 'none'], ['Reaches roof', s.toRoof ? 'yes' : 'no'], ['Reaches basement', s.toBase ? 'yes' : 'no'], ['Counted as exit', R.exitOf[s.id] === s.id ? 'separate exit' : 'shares a wall with ' + R.exitOf[s.id]], ['Standpipe', 'yes (schematic), hose valve at each landing'], ['Enclosure', '2-hour fire barrier (§1023.2)']]; }
     else if (p.type === 'elev') { const e = R.elevators.find(x => x.id === p.id); h = `Elevator ${e.id} (${e.kind})`;
-      rows = [['Shaft plan (m)', `${(e.b[3] - e.b[0]).toFixed(2)} × ${(e.b[4] - e.b[1]).toFixed(2)}`], ['Bottom / top', `+${e.bot.toFixed(2)} / +${e.top.toFixed(2)} m`], ['Floors served', e.floors.map(flName).join(', ')], ['Lobby', e.lobby || 'none'], ['Lobby adjoins stair', e.lobbyStair || 'no'], ['FSE candidate', e.fse ? 'yes' : 'no']]; }
+      rows = [['Shaft plan (m)', `${(e.b[3] - e.b[0]).toFixed(2)} × ${(e.b[4] - e.b[1]).toFixed(2)}`], ['Bottom / top', `+${e.bot.toFixed(2)} / +${e.top.toFixed(2)} m`], ['Floors served', e.floors.map(flName).join(', ')], ['Lobby', e.lobby || 'none'], ['Lobby adjoins stair', e.lobbyStair || 'no'], ['FSE', e.fse ? 'yes' : 'no']]; }
     else if (p.type === 'lobby') { const l = R.lobbies.find(x => x.id === p.id); h = `${l.role[0].toUpperCase() + l.role.slice(1)} ${l.id}`;
       rows = [['Plan (m)', `${(l.b[3] - l.b[0]).toFixed(2)} × ${(l.b[4] - l.b[1]).toFixed(2)} = ${((l.b[3] - l.b[0]) * (l.b[4] - l.b[1])).toFixed(1)} m²`], ['Bottom / top', `+${l.b[2].toFixed(2)} / +${l.b[5].toFixed(2)} m`], ['Serves', l.role === 'vestibule' ? R.stairs.find(s => s.vest?.id === l.id)?.id : R.elevators.filter(e => e.lobby === l.id).map(e => e.id).join(', ')]]; }
     else if (p.type === 'zone') { const v = P.volumes.find(x => x.id === p.id), r = R.rows[v.floor], z = r.zones.find(q => q.id === v.id) || {}; h = C[v.cat]?.label || v.cat;

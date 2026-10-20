@@ -262,8 +262,10 @@ export function lifeSafety(P, A, model, G = {}) {
     e.reachesTop = e.top >= hiZ;
     e.floors = L.map((x, i) => i).filter(i => e.bot <= L[i].z + 0.5 && e.top >= L[i].z + 0.5);
     if (e.floors.length) e.b[5] = roomTop(e.b, Math.max(...e.floors));
-    e.fse = !!(e.lobby && e.reachesTop);
+    e.area = (e.b[3] - e.b[0]) * (e.b[4] - e.b[1]);
   }
+  { const ok = elev.filter(e => e.lobby && e.reachesTop).sort((a, b) => b.area - a.area);   // FSE = the largest car with an enclosed lobby that reaches the top occupied floor (one is required in NYC)
+    elev.forEach(e => e.fse = e === ok[0]); }
   lob.forEach(l => l.role ||= 'lobby');
 
   // ---------- per floor ----------
@@ -407,7 +409,7 @@ export function lifeSafety(P, A, model, G = {}) {
     const top = Math.max(...elev.map(e => e.top), -Infinity);
     const missF = fse.length ? L.map((l, i) => i).filter(i => !fse[0].floors.includes(i)).map(i => F[i].name) : [];
     it(!elev.length ? 'fail' : fse.length ? 'ok' : 'fail', 'Fire service access elevator', elev.length
-      ? `Occupied floor > 120 ft: at least one FSE serving every floor. Model: ${elev.length} cars (${elev.map(e => `${e.id} ${e.kind}`).join(', ')}), top +${top.toFixed(1)} m. ${fse.length ? `Candidates with an enclosed lobby reaching the top occupied floor: ${fse.map(e => e.id).join(', ')}; lobby ${fse[0].lobby}${fse[0].lobbyStair ? ` adjoins stair ${fse[0].lobbyStair}` : ' does not adjoin an exit stair'}.${missF.length ? ` Floors not reached: ${missF.join(', ')}.` : ''} Designate one and confirm lobby, standby power and water protection per §3007.` : 'No car has an enclosed lobby and reaches the top occupied floor.'}`
+      ? `Occupied floor > 120 ft: at least one FSE serving every floor. Model: ${elev.length} cars (${elev.map(e => `${e.id} ${e.kind}`).join(', ')}), top +${top.toFixed(1)} m. ${fse.length ? `FSE: ${fse[0].id} (${fse[0].kind}, largest car, shaft ${(fse[0].b[3] - fse[0].b[0]).toFixed(2)} × ${(fse[0].b[4] - fse[0].b[1]).toFixed(2)} m); lobby ${fse[0].lobby}${fse[0].lobbyStair ? ` adjoins stair ${fse[0].lobbyStair}` : ' does not adjoin an exit stair'}.${missF.length ? ` Floors not reached: ${missF.join(', ')}.` : ''} Confirm car size (ambulance stretcher, §3002.4), lobby, standby power and water protection per §3007.` : 'No car has an enclosed lobby and reaches the top occupied floor.'}`
       : `Occupied floor > 120 ft: at least one FSE required. Core model elevator layers not found (load detail data).`, 'NYC BC §403.6.1, §3007.1', 'fse');
     it('info', 'Occupant evacuation elevators', 'Permitted but not required (§403.6.2); if provided, §3008 applies.', 'NYC BC §403.6.2, §3008', 'oee');
   }
