@@ -8,11 +8,11 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
-import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261019c'; // keep in step with APP_V in ls.html
-import { viewTools, renderTiled } from './viewtools.js?v=20261019c';
-import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261019c';
-import { LS_Q } from './ls-codes.js?v=20261019c';
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261019c';
+import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261019d'; // keep in step with APP_V in ls.html
+import { viewTools, renderTiled } from './viewtools.js?v=20261019d';
+import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261019d';
+import { LS_Q } from './ls-codes.js?v=20261019d';
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261019d';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);

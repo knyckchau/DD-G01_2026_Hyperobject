@@ -216,6 +216,8 @@ export function clusterDetail(D, levelZ = []) {
     }
   }
   out.walls = out.walls.map(w => new Float32Array(w));
+  const wl = D.layers.find(l => l.name === '00_WALLS');   // core wall vertices: the modelled height of each shaft
+  if (wl) { const q = dec(wl.v, Int16Array), v = new Float32Array(q.length); for (let i = 0; i < q.length; i++) v[i] = q[i] / 100 + D.origin[i % 3]; out.coreV = v; }
   out.elevators.sort((a, b) => a.b[0] - b.b[0] || a.b[1] - b.b[1]).forEach((e, i) => e.id = 'E' + (i + 1));
   return out;
 }
@@ -229,10 +231,16 @@ export function lifeSafety(P, A, model, G = {}) {
   const it = (status, item, detail, ref, k) => items.push({ status, item, detail, ref, k });
 
   // ---------- stairs, vestibules, exits ----------
-  // an enclosure (stair shaft, vestibule, lobby) is a room: it rises to the slab above the highest floor it serves, not to the top of the flight or floor patch inside it
+  // an enclosure (stair shaft, vestibule, lobby, hoistway) is a room: its height is that of the core walls around it, not the top of the flight or floor patch inside it
+  // (no core model loaded: the slab above the highest floor it serves)
   const ceil = i => L[i + 1]?.z ?? L[i].z + (L[i].z - L[i - 1].z);
   const topFloor = z => L.reduce((m, l, i) => l.z <= z + 0.1 ? i : m, 0);
-  const lob = (G.lobbies || []).map((b, i) => ({ id: 'LB' + (i + 1), b: [...b.slice(0, 5), ceil(topFloor(b[5]))] }));
+  const CV = G.coreV;
+  const wallTop = b => { if (!CV) return null;   // nearest core walls: widen the search until some are found (cars in a bank share the bank's walls)
+    for (const m of [0.5, 1.5, 3]) { let t = -Infinity; for (let i = 0; i < CV.length; i += 3) if (CV[i] > b[0] - m && CV[i] < b[3] + m && CV[i + 1] > b[1] - m && CV[i + 1] < b[4] + m && CV[i + 2] > t) t = CV[i + 2]; if (isFinite(t)) return t; }
+    return null; };
+  const roomTop = (b, fl) => Math.max(b[5], wallTop(b) ?? ceil(fl));
+  const lob = (G.lobbies || []).map((b, i) => ({ id: 'LB' + (i + 1), b: [...b.slice(0, 5), roomTop(b, topFloor(b[5]))] }));
   const stairs = (MEP.stairs || []).map(s => ({ id: s.id, b: [...s.bbox], bot: s.bbox[2], top: s.bbox[5] }));
   for (const s of stairs) {
     const v = lob.filter(l => edgeGap(l.b, s.b) < 0.4 && zOverlap(l.b, s.b)).sort((a, c) => (a.b[3] - a.b[0]) * (a.b[4] - a.b[1]) - (c.b[3] - c.b[0]) * (c.b[4] - c.b[1]))[0];
@@ -240,7 +248,7 @@ export function lifeSafety(P, A, model, G = {}) {
     if (s.vest) s.vest.role = 'vestibule';
     s.toRoof = s.top >= roofZ - 0.3; s.toBase = P.basementZ != null && s.bot <= P.basementZ + 1;
     s.floors = L.map((l, i) => i).filter(i => s.bot <= L[i].z + 1 && s.top >= L[i].z + 1);
-    if (s.floors.length) s.b[5] = Math.max(s.b[5], ceil(Math.max(...s.floors)));
+    if (s.floors.length) s.b[5] = roomTop(s.b, Math.max(...s.floors));
   }
   // stairs sharing a wall count as one exit stairway (§1007.1.1)
   const exitOf = {}; stairs.forEach((s, i) => { exitOf[s.id] = s.id; for (let j = 0; j < i; j++) if (edgeGap(s.b, stairs[j].b) < 0.3) exitOf[s.id] = exitOf[stairs[j].id]; });
@@ -253,7 +261,7 @@ export function lifeSafety(P, A, model, G = {}) {
     e.lobbyStair = l ? (stairs.filter(s => edgeGap(s.b, l.b) < 0.6).map(s => s.id)[0] || null) : null;
     e.reachesTop = e.top >= hiZ;
     e.floors = L.map((x, i) => i).filter(i => e.bot <= L[i].z + 0.5 && e.top >= L[i].z + 0.5);
-    if (e.floors.length) e.b[5] = Math.max(e.b[5], ceil(Math.max(...e.floors)));   // hoistway rises to the slab above the top stop
+    if (e.floors.length) e.b[5] = roomTop(e.b, Math.max(...e.floors));
     e.fse = !!(e.lobby && e.reachesTop);
   }
   lob.forEach(l => l.role ||= 'lobby');
@@ -385,6 +393,8 @@ export function lifeSafety(P, A, model, G = {}) {
     const toB = stairs.filter(s => s.toBase);
     it(toB.length ? 'ok' : (tech ? 'fail' : 'info'), 'Basement exits', toB.length ? `${toB.map(s => s.id).join(', ')} reach the basement (${P.basementZ.toFixed(1)} m).` : `No modelled stair reaches the basement (${P.basementZ.toFixed(1)} m)${tech ? `, which has ${tech} technical rooms` : ''}. Provide exit stairs or confirm the basement egress route (Table 1006.3.1).`, 'NYC BC §1006.3.1, Table 1006.3.1', 'base');
   }
+  { const short = [...stairs.filter(s => s.floors.length).map(s => [s.id, s.b[5], ceil(Math.max(...s.floors))]), ...elev.filter(e => e.floors.length).map(e => [e.id, e.b[5], ceil(Math.max(...e.floors))])].filter(x => x[1] < x[2] - 0.3);
+    it(short.length ? 'fail' : 'ok', 'Shaft enclosure continuity', short.length ? `Core walls stop below the slab above the top floor served: ${short.map(x => `${x[0]} +${x[1].toFixed(1)} (slab +${x[2].toFixed(1)})`).join(', ')}. Stair and hoistway enclosures must run to the underside of the slab or roof deck above, or be capped with construction of equal rating; the model shows neither.` : 'Every stair and hoistway enclosure reaches the slab above its top floor.', 'NYC BC §707.5, §713.12, §1023.2', 'shaft'); }
   const nEx = new Set(stairs.map(s => exitOf[s.id])).size;
   it('info', 'Exit stairways', `${stairs.length} stairs in the model${nEx < stairs.length ? `, but stairs sharing a wall count as one exit: ${nEx} exits` : ''}. Capacity ${A.stairClearIn} in ÷ ${A.stairFactor} in/occ = ${Math.floor(capPer)} occupants per stair per storey. Enclosures 2-hour (four or more storeys).`, 'NYC BC §1005.3.1, §1007.1.1, §1023.2', 'cap');
   if (hf > 75) {
