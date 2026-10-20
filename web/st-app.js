@@ -2,9 +2,9 @@
 // from models/*structure*.fbx) against the current slabs and programme, layer by layer.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { CATS } from './engine.js?v=20261018zp'; // keep in step with APP_V in st.html
-import { viewTools } from './viewtools.js?v=20261018zp';
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261018zp';
+import { CATS } from './engine.js?v=20261019a'; // keep in step with APP_V in st.html
+import { viewTools, renderTiled } from './viewtools.js?v=20261019a';
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261019a';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -234,16 +234,7 @@ const toast = m => { const t = $('#toast'); t.textContent = m; t.style.opacity =
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
 function download(name, data, type) { const b = data instanceof Blob ? data : new Blob([data], { type }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
 // renders rect (screen px of the view, may reach beyond it) at w × h with a transparent background (export dialog)
-function renderImage(w, h, rect) {
-  const max = renderer.capabilities.maxTextureSize; if (w > max) { h = Math.round(h * max / w); w = max; } if (h > max) { w = Math.round(w * max / h); h = max; }
-  const vw = view.clientWidth, vh = view.clientHeight, pr = renderer.getPixelRatio();
-  renderer.setPixelRatio(1); renderer.setSize(w, h, false);
-  camera.setViewOffset(vw, vh, rect.x, rect.y, rect.w, rect.h);
-  scaleTags(vh); const bg = scene.background; scene.background = null; renderer.setClearColor(0x000000, 0); renderer.render(scene, camera); scene.background = bg; camera.clearViewOffset();
-  const out = document.createElement('canvas'); out.width = w; out.height = h; out.getContext('2d').drawImage(renderer.domElement, 0, 0);
-  renderer.setPixelRatio(pr); renderer.setSize(vw, vh, false); renderer.domElement.style.width = vw + 'px'; renderer.domElement.style.height = vh + 'px'; resize();
-  return out;
-}
+function renderImage(w, h, rect) { return renderTiled({ renderer, scene, camera, view, w, h, rect, lineMats: [], before: () => scaleTags(view.clientHeight), after: resize }); }
 const selName = () => floorSel === -1 ? 'ALL' : floorSel === -2 ? 'B1' : flName(floorSel);
 $('#bPng').onclick = () => VT.openExport('png4');
 $('#bSvg').onclick = () => VT.openExport('svg');

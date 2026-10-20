@@ -13,6 +13,25 @@ const FONT = '"IBM Plex Mono", monospace', INK = '#1d1f22';
 const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 // exp: { renderImage(w, h) -> canvas with transparent background, svgItems() -> export3d items, title(), fileStem() }
+// Raster export, drawn in tiles of at most 2048 px: a single large WebGL canvas can be silently clamped by the browser or GPU,
+// which crops or rescales the drawing. Pixel-width lines are widened by the output scale so the image looks like the screen.
+export function renderTiled({ renderer, scene, camera, view, w, h, rect, lineMats = [], before = null, after = null }) {
+  w = Math.min(w, 16384); h = Math.min(h, 16384);
+  const vw = view.clientWidth, vh = view.clientHeight, pr = renderer.getPixelRatio(), k = w / rect.w, T = 2048;
+  const out = document.createElement('canvas'); out.width = w; out.height = h; const ctx = out.getContext('2d');
+  const lw = lineMats.map(m => m.linewidth); lineMats.forEach(m => { if (!m.worldUnits) m.linewidth *= k; });
+  before?.(); const bg = scene.background; scene.background = null; renderer.setPixelRatio(1); renderer.setClearColor(0x000000, 0);
+  for (let ty = 0; ty < h; ty += T) for (let tx = 0; tx < w; tx += T) {
+    const tw = Math.min(T, w - tx), th = Math.min(T, h - ty);
+    renderer.setSize(tw, th, false); lineMats.forEach(m => m.resolution.set(tw, th));
+    camera.setViewOffset(vw, vh, rect.x + tx / k, rect.y + ty / k, tw / k, th / k);
+    renderer.render(scene, camera); ctx.drawImage(renderer.domElement, 0, 0, tw, th, tx, ty, tw, th);
+  }
+  camera.clearViewOffset(); scene.background = bg; lineMats.forEach((m, i) => m.linewidth = lw[i]);
+  renderer.setPixelRatio(pr); renderer.setSize(vw, vh, false); renderer.domElement.style.width = vw + 'px'; renderer.domElement.style.height = vh + 'px'; after?.();
+  return out;
+}
+
 export function viewTools({ view, ocam, pcam, controls, getCamera, setOrtho, getBox, key, exp }) {
   let ftPerIn = 0;   // 0 = free zoom
   try { ftPerIn = +JSON.parse(localStorage.getItem(key + '.scale')) || 0; } catch { }
@@ -266,8 +285,10 @@ export function viewTools({ view, ocam, pcam, controls, getCamera, setOrtho, get
   async function preview() {
     if (!job) return; const o = opts(); let blob;
     if (job.kind === 'svg') blob = new Blob([buildSVG(o, job.items, job.rect)], { type: 'image/svg+xml' });
-    else {   // preview at reduced size with the final aspect ratio
-      const s = Math.min(1, 1100 / Math.max(job.w, job.h)), c = await composeCanvas(exp.renderImage(Math.round(job.w * s), Math.round(job.h * s), job.rect), o, job.k * s);
+    else {   // the preview is the export itself, scaled down: one full-resolution render serves both
+      job.base ||= exp.renderImage(job.w, job.h, job.rect);
+      const full = await composeCanvas(job.base, o, job.k), s = Math.min(1, 1400 / Math.max(full.width, full.height)), c = document.createElement('canvas');
+      c.width = Math.round(full.width * s); c.height = Math.round(full.height * s); const cx = c.getContext('2d'); cx.imageSmoothingQuality = 'high'; cx.drawImage(full, 0, 0, c.width, c.height);
       blob = await new Promise(r => c.toBlob(r, 'image/png'));
     }
     if (prevUrl) URL.revokeObjectURL(prevUrl); prevUrl = URL.createObjectURL(blob); $x('#xPrev').src = prevUrl;
@@ -278,7 +299,7 @@ export function viewTools({ view, ocam, pcam, controls, getCamera, setOrtho, get
     if (!job) return; const o = opts(), name = ($x('#xFile').value.trim() || exp.fileStem()).replace(/[\\/:*?"<>|]+/g, '_');
     let blob;
     if (job.kind === 'svg') blob = new Blob([buildSVG(o, job.items, job.rect)], { type: 'image/svg+xml' });
-    else { const c = await composeCanvas(exp.renderImage(job.w, job.h, job.rect), o, job.k); blob = await new Promise(r => c.toBlob(r, 'image/png')); if (job.dpi) blob = await withDpi(blob, job.dpi); }
+    else { const c = await composeCanvas(job.base ||= exp.renderImage(job.w, job.h, job.rect), o, job.k); blob = await new Promise(r => c.toBlob(r, 'image/png')); if (job.dpi) blob = await withDpi(blob, job.dpi); }
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name + (job.kind === 'svg' ? '.svg' : '.png'); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     close();
   };

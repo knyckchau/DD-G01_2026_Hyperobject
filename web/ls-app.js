@@ -8,11 +8,11 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
-import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261018zp'; // keep in step with APP_V in ls.html
-import { viewTools } from './viewtools.js?v=20261018zp';
-import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261018zp';
-import { LS_Q } from './ls-codes.js?v=20261018zp';
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261018zp';
+import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261019a'; // keep in step with APP_V in ls.html
+import { viewTools, renderTiled } from './viewtools.js?v=20261019a';
+import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261019a';
+import { LS_Q } from './ls-codes.js?v=20261019a';
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261019a';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -347,8 +347,10 @@ function buildLS() {
       const gw = new THREE.BufferGeometry(); gw.setAttribute('position', new THREE.BufferAttribute(v, 3));
       put(dynG, 'walls', new THREE.LineSegments(gw, new THREE.LineBasicMaterial({ color: 0x343a40 })), r.idx); }
     if (r.unreachCells?.length) { const v = new Float32Array(r.unreachCells.length * 3); r.unreachCells.forEach((c, n) => { v[n * 3] = c[0]; v[n * 3 + 1] = c[1]; v[n * 3 + 2] = r.z + 0.08; });
-      const gu = new THREE.BufferGeometry(); gu.setAttribute('position', new THREE.BufferAttribute(v, 3));
-      put(dynG, 'unreach', new THREE.Points(gu, new THREE.PointsMaterial({ color: STC.fail, size: r.cell, transparent: true, opacity: 0.45 })), r.idx);
+      // one square per grid cell, sized in metres (screen-size points vanish in a large export)
+      const im = new THREE.InstancedMesh(new THREE.PlaneGeometry(r.cell, r.cell), new THREE.MeshBasicMaterial({ color: STC.fail, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }), r.unreachCells.length), M = new THREE.Matrix4();
+      for (let n = 0; n < r.unreachCells.length; n++) im.setMatrixAt(n, M.makeTranslation(v[n * 3], v[n * 3 + 1], v[n * 3 + 2]));
+      put(dynG, 'unreach', im, r.idx);
       if (r.unreachM2 > 2 && !r.roof) { const c = r.unreachCells[Math.floor(r.unreachCells.length / 2)]; put(dynG, 'unreach', at(tag(`${fmt(r.unreachM2)} m² no path to a stair`, STC.fail, 0.85), c[0], c[1], r.z + 1), r.idx); } }
     if (r.groups.length > 1) {
       const v = [], t = []; for (const tr of L[r.idx].tris) { const b = v.length / 3; v.push(tr[0], tr[1], r.z + 0.15, tr[2], tr[3], r.z + 0.15, tr[4], tr[5], r.z + 0.15); t.push(b, b + 1, b + 2); }
@@ -641,16 +643,7 @@ const toast = m => { const t = $('#toast'); t.textContent = m; t.style.opacity =
 const stamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
 function download(name, data, type) { const b = data instanceof Blob ? data : new Blob([data], { type }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
 // renders rect (screen px of the view, may reach beyond it) at w × h with a transparent background (export dialog)
-function renderImage(w, h, rect) {
-  const max = renderer.capabilities.maxTextureSize; if (w > max) { h = Math.round(h * max / w); w = max; } if (h > max) { w = Math.round(w * max / h); h = max; }
-  const vw = view.clientWidth, vh = view.clientHeight, pr = renderer.getPixelRatio();
-  renderer.setPixelRatio(1); renderer.setSize(w, h, false); lineMats.forEach(m => m.resolution.set(w, h));
-  camera.setViewOffset(vw, vh, rect.x, rect.y, rect.w, rect.h);
-  scaleTags(vh); const bg = scene.background; scene.background = null; renderer.setClearColor(0x000000, 0); renderer.render(scene, camera); scene.background = bg; camera.clearViewOffset();
-  const out = document.createElement('canvas'); out.width = w; out.height = h; out.getContext('2d').drawImage(renderer.domElement, 0, 0);
-  renderer.setPixelRatio(pr); renderer.setSize(vw, vh, false); renderer.domElement.style.width = vw + 'px'; renderer.domElement.style.height = vh + 'px'; resize();
-  return out;
-}
+function renderImage(w, h, rect) { return renderTiled({ renderer, scene, camera, view, w, h, rect, lineMats: lineMats, before: () => scaleTags(view.clientHeight), after: resize }); }
 const selName = () => floorSel === -1 ? 'ALL' : floorSel === -2 ? 'B1' : flName(floorSel);
 $('#bPng').onclick = () => VT.openExport('png4');
 $('#bSvg').onclick = () => VT.openExport('svg');
