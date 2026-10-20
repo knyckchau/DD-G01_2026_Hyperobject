@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { generate, DEFAULTS, CATS, MISSING, IN, M2FT2 } from './engine.js?v=20261019f'; // keep in step with APP_V in index.html
-import { viewTools, renderTiled } from './viewtools.js?v=20261019f';
-import { collect, toOBJ, addTo3dm, rhinoLib } from './export3d.js?v=20261019f';
+import { generate, DEFAULTS, CATS, MISSING, IN, M2FT2 } from './engine.js?v=20261019g'; // keep in step with APP_V in index.html
+import { viewTools, renderTiled } from './viewtools.js?v=20261019g';
+import { collect, toOBJ, addTo3dm, rhinoLib } from './export3d.js?v=20261019g';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);

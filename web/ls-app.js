@@ -8,11 +8,11 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
-import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261019f'; // keep in step with APP_V in ls.html
-import { viewTools, renderTiled } from './viewtools.js?v=20261019f';
-import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261019f';
-import { LS_Q } from './ls-codes.js?v=20261019f';
-import { collect, toOBJ, to3dm } from './export3d.js?v=20261019f';
+import { generate, DEFAULTS, CATS, M2FT2 } from './engine.js?v=20261019g'; // keep in step with APP_V in ls.html
+import { viewTools, renderTiled } from './viewtools.js?v=20261019g';
+import { lifeSafety, clusterDetail } from './lifesafety.js?v=20261019g';
+import { LS_Q } from './ls-codes.js?v=20261019g';
+import { collect, toOBJ, to3dm } from './export3d.js?v=20261019g';
 
 const P = window.PROJECT;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -59,7 +59,7 @@ const clipLo = new THREE.Plane(new THREE.Vector3(0, 0, 1), 1e4), clipHi = new TH
 // ---------- layers ----------
 // [key, label, default on, swatch]; 'line:'/'dline:' swatches draw a solid / dashed line sample
 const LAYERS = [
-  ['Base', [['slabs', 'Slabs', 1], ['labels', 'Floor labels + egress status', 1], ['occ', 'Programme by occupancy group', 1, 'tree'], ['occTags', 'Occupant load tags', 1], ['core', 'Core walls (core model)', 1], ['walls', 'Walls cut at +1.0 m (routing)', 1, '#343a40']]],
+  ['Base', [['slabs', 'Slabs', 1], ['labels', 'Floor labels', 1], ['occ', 'Programme by occupancy group', 1, 'tree'], ['occTags', 'Occupant load tags', 1], ['core', 'Core walls (core model)', 1], ['walls', 'Walls cut at +1.0 m (routing)', 1, '#343a40']]],
   ['Vertical exits', [['stairs', 'Exit stair enclosures', 1, COLR.stair], ['stairGeo', 'Stair flights (core model)', 0], ['stairTags', 'Stair ID tags', 1], ['vest', 'Smokeproof vestibules', 1, COLR.vest], ['roof', 'Stairway to roof', 1, 'tup:' + STC.fail], ['base', 'Basement exits', 1, 'tdn:' + STC.fail], ['cutdoor', 'Stair doors opening onto no floor', 1, STC.fail]]],
   ['Horizontal egress', [['heat', 'Walking distance to nearest exit (map)', 0, 'grad'], ['paths', 'Path of travel (most remote point of each space → nearest exit)', 1, 'oline:' + STC.ok], ['cpet', 'Common path of egress travel', 1, 'cline:' + STC.ok], ['travel2', 'Second exit path (Group A)', 0, 'pline:' + STC.ok], ['sep', 'Exit separation vs ⅓ diagonal', 0, 'chline:#868e96'], ['unreach', 'Floor with no path to a stair', 1, STC.fail]]],
   ['Elevators', [['elev', 'Elevator cars', 1, COLR.elev], ['fse', 'Fire service access elevator', 1, COLR.fse], ['elobby', 'Elevator lobby', 1, COLR.elobby]]],
@@ -76,7 +76,7 @@ const INK = 'var(--ink)';
 // [legend row: 1 = areas / volumes, 2 = lines, markers and tags, swatch, legend text]
 const LEG = {
   slabs: [1, BOX('#d9dbd6', 1, '#7c8189'), 'Slab'],
-  labels: [2, TAG(STC.ok), 'Floor label (status)'],
+  labels: [2, TAG('#868e96'), 'Floor label'],
   occTags: [2, TAG(GRPCOL['A-3']), 'Occupant load (group colour)'],
   core: [1, BOX('#c9ccd1', 0.5, '#6c727a'), 'Core walls'],
   walls: [2, SVGL('#343a40', 2), 'Wall cut at +1.0 m'],
@@ -277,8 +277,8 @@ function buildLS() {
     m.position.set((b[0] + b[3]) / 2, (b[1] + b[4]) / 2, L[i].z + 0.12); m.add(new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), new THREE.LineBasicMaterial({ color })));
     if (planOnly) m.userData.planOnly = 1; put(dynG, layer, pick ? pk(m, pick) : m, i); } };
   const flIn = b => L.map((l, i) => i).filter(i => b[2] <= L[i].z + 0.5 && b[5] >= L[i].z + 0.5);
-  // floor labels with egress status
-  R.rows.forEach(r => { const s = tag(`${r.name} +${r.z.toFixed(1)}  ${MARK[r.status]} ${fmt(r.occ)} occ`, STC[r.status], 1.3); s.center.set(1, 0); put(dynG, 'labels', at(s, bmin.x - 2, bmax.y + 2, r.z + 0.3), r.idx); });
+  // floor labels: level, elevation, occupant load (pass / fail per floor is in the Floors table)
+  R.rows.forEach(r => { const s = tag(`${r.name} +${r.z.toFixed(1)}  ${fmt(r.occ)} occ`, '#868e96', 1.3); s.center.set(1, 0); put(dynG, 'labels', at(s, bmin.x - 2, bmax.y + 2, r.z + 0.3), r.idx); });
   // occupant tags per zone
   R.rows.forEach(r => r.zones.forEach(z => { if (z.synthetic) return;
     put(dynG, 'occTags', at(tag(`${z.grp} · ${fmt(z.occ)}`, GRPCOL[z.grp] || '#999', 0.9), z.p[0], z.p[1], r.z + 2.2), r.idx); }));
